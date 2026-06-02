@@ -54,14 +54,22 @@ def _jira_auth():
 
 
 def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | None = None):
-    """Fetch worklogs from JIRA Cloud REST API within a date range."""
+    """Fetch worklogs from JIRA Cloud REST API within a date range for all employees across all projects."""
     if not JIRA_EMAIL or not JIRA_API_TOKEN:
+        logger.warning("JIRA credentials not configured (email=%s, token=%s)", 
+                      bool(JIRA_EMAIL), bool(JIRA_API_TOKEN))
         return None
 
+    # Build JQL: Fetch ALL issues with worklogs in the date range
     jql_parts = [f'worklogDate >= "{start_date}" AND worklogDate <= "{end_date}"']
+    
+    # If specific projects provided, filter to those; otherwise get ALL projects
     if project_keys:
         keys = ", ".join(project_keys)
         jql_parts.append(f"project in ({keys})")
+        logger.info("Fetching worklogs from projects: %s", keys)
+    else:
+        logger.info("Fetching worklogs from ALL projects")
 
     jql = " AND ".join(jql_parts)
     url = f"{JIRA_BASE_URL}/rest/api/3/search"
@@ -69,6 +77,8 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
     start_at = 0
     max_results = 100
 
+    logger.info("JIRA Query: %s", jql)
+    
     while True:
         params = {
             "jql": jql,
@@ -77,37 +87,51 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
             "fields": "worklog,project,summary,assignee",
         }
         try:
+            logger.debug("JIRA API request: %s (offset=%d)", url, start_at)
             resp = requests.get(url, headers=_jira_headers(), auth=_jira_auth(), params=params, timeout=30)
             resp.raise_for_status()
             data = resp.json()
             issues = data.get("issues", [])
             all_issues.extend(issues)
-            if start_at + max_results >= data.get("total", 0):
+            total = data.get("total", 0)
+            logger.info("JIRA returned %d issues, total: %d (progress: %d/%d)", 
+                       len(issues), total, start_at + len(issues), total)
+            
+            if start_at + max_results >= total:
                 break
             start_at += max_results
         except requests.RequestException as exc:
             logger.error("JIRA API error: %s", exc)
-            break
+            return None
 
+    logger.info("Processed %d issues with worklogs", len(all_issues))
     return _transform_worklogs(all_issues, start_date, end_date)
 
 
 def _transform_worklogs(issues, start_date, end_date):
-    """Transform JIRA issues with worklogs into the utilization matrix."""
+    """Transform JIRA issues with worklogs into the utilization matrix.
+    
+    Extracts worklogs from all issues and aggregates by person and project.
+    """
     records: dict[str, dict] = {}  # person -> {project: hours}
     sd = datetime.strptime(start_date, "%Y-%m-%d")
     ed = datetime.strptime(end_date, "%Y-%m-%d")
+    
+    worklog_count = 0
 
     for issue in issues:
         fields = issue.get("fields", {})
         project_key = fields.get("project", {}).get("key", "OTHER")
+        issue_key = issue.get("key", "?")
         worklogs = fields.get("worklog", {}).get("worklogs", [])
 
         for wl in worklogs:
+            worklog_count += 1
             started = wl.get("started", "")[:10]
             try:
                 wl_date = datetime.strptime(started, "%Y-%m-%d")
             except ValueError:
+                logger.warning("Invalid worklog date: %s", started)
                 continue
             if not (sd <= wl_date <= ed):
                 continue
@@ -117,8 +141,19 @@ def _transform_worklogs(issues, start_date, end_date):
 
             if author not in records:
                 records[author] = {col: 0.0 for col in PROJECT_COLUMNS}
-            col = project_key if project_key in PROJECT_COLUMNS else "Customer Projs"
+            
+            # Map project key to column (customer projects, general, or unknown)
+            if project_key in PROJECT_COLUMNS:
+                col = project_key
+            elif project_key in CUSTOMER_PROJECTS:
+                col = project_key
+            else:
+                col = "Customer Projs"  # fallback for unmapped projects
+            
             records[author][col] = records[author].get(col, 0.0) + hours
+            logger.debug("Worklog: %s → %s (%s) = %.2f hours", author, issue_key, col, hours)
+
+    logger.info("Processed %d worklogs for %d unique employees", worklog_count, len(records))
 
     rows = []
     for person, hours_map in records.items():
@@ -134,6 +169,10 @@ def _transform_worklogs(issues, start_date, end_date):
             "proj_pct": round(proj_hours / EXPECTED_HOURS, 4) if EXPECTED_HOURS else 0,
             "general_pct": round(gen_hours / EXPECTED_HOURS, 4) if EXPECTED_HOURS else 0,
         })
+    
+    # Sort by total hours (descending)
+    rows.sort(key=lambda r: r["total"], reverse=True)
+    logger.info("Returning %d employee records", len(rows))
     return rows
 
 
@@ -328,6 +367,18 @@ def api_insights():
 @app.route("/api/health")
 def health():
     return jsonify({"status": "ok", "timestamp": datetime.utcnow().isoformat()})
+
+
+@app.route("/api/debug/config")
+def debug_config():
+    """Debug endpoint to check if JIRA credentials are loaded."""
+    return jsonify({
+        "jira_base_url": JIRA_BASE_URL[:30] + "..." if JIRA_BASE_URL else None,
+        "jira_email_set": bool(JIRA_EMAIL),
+        "jira_token_set": bool(JIRA_API_TOKEN),
+        "claude_key_set": bool(CLAUDE_API_KEY),
+        "expected_hours": EXPECTED_HOURS,
+    })
 
 
 # ---------------------------------------------------------------------------
