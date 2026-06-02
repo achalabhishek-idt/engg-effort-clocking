@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "https://subex.atlassian.net")
 JIRA_EMAIL = os.getenv("JIRA_EMAIL", "")
-JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "")
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "") or os.getenv("JIRA_TOKEN", "")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 EXPECTED_HOURS = int(os.getenv("EXPECTED_HOURS", "168"))
 
@@ -54,31 +54,25 @@ def _jira_auth():
 
 
 def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | None = None):
-    """Fetch worklogs from JIRA Cloud REST API within a date range for all employees across all projects."""
+    """Fetch worklogs from JIRA Cloud REST API within a date range."""
     if not JIRA_EMAIL or not JIRA_API_TOKEN:
-        logger.warning("JIRA credentials not configured (email=%s, token=%s)", 
-                      bool(JIRA_EMAIL), bool(JIRA_API_TOKEN))
-        return None
+        logger.warning("JIRA credentials not configured (email=%s, token=%s)",
+                       bool(JIRA_EMAIL), bool(JIRA_API_TOKEN))
+        return {"error": "JIRA credentials not configured. Upload an Excel file instead.", "data": []}
 
-    # Build JQL: Fetch ALL issues with worklogs in the date range
     jql_parts = [f'worklogDate >= "{start_date}" AND worklogDate <= "{end_date}"']
-    
-    # If specific projects provided, filter to those; otherwise get ALL projects
     if project_keys:
         keys = ", ".join(project_keys)
         jql_parts.append(f"project in ({keys})")
-        logger.info("Fetching worklogs from projects: %s", keys)
-    else:
-        logger.info("Fetching worklogs from ALL projects")
 
     jql = " AND ".join(jql_parts)
-    url = f"{JIRA_BASE_URL}/rest/api/3/search"
+    url = f"{JIRA_BASE_URL}/rest/api/3/search/jql"
     all_issues = []
     start_at = 0
     max_results = 100
 
     logger.info("JIRA Query: %s", jql)
-    
+
     while True:
         params = {
             "jql": jql,
@@ -87,25 +81,31 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
             "fields": "worklog,project,summary,assignee",
         }
         try:
-            logger.debug("JIRA API request: %s (offset=%d)", url, start_at)
-            resp = requests.get(url, headers=_jira_headers(), auth=_jira_auth(), params=params, timeout=30)
+            resp = requests.get(url, headers=_jira_headers(), auth=_jira_auth(),
+                                params=params, timeout=30)
+            
+            # ── Return the REAL error instead of hiding it ──
+            if resp.status_code == 401:
+                return {"error": "JIRA returned 401 Unauthorized. Check JIRA_EMAIL and JIRA_API_TOKEN.", "data": []}
+            if resp.status_code == 403:
+                return {"error": "JIRA returned 403 Forbidden. Your token may lack permissions, or IP allowlist is blocking Azure.", "data": []}
+            
             resp.raise_for_status()
             data = resp.json()
             issues = data.get("issues", [])
             all_issues.extend(issues)
             total = data.get("total", 0)
-            logger.info("JIRA returned %d issues, total: %d (progress: %d/%d)", 
-                       len(issues), total, start_at + len(issues), total)
-            
+            logger.info("JIRA: %d/%d issues fetched", start_at + len(issues), total)
+
             if start_at + max_results >= total:
                 break
             start_at += max_results
         except requests.RequestException as exc:
             logger.error("JIRA API error: %s", exc)
-            return None
+            return {"error": f"JIRA API connection error: {str(exc)}", "data": []}
 
-    logger.info("Processed %d issues with worklogs", len(all_issues))
-    return _transform_worklogs(all_issues, start_date, end_date)
+    rows = _transform_worklogs(all_issues, start_date, end_date)
+    return {"data": rows, "start": start_date, "end": end_date}
 
 
 def _transform_worklogs(issues, start_date, end_date):
@@ -323,17 +323,16 @@ def api_data():
     elif period == "previous_week":
         start = today - timedelta(days=today.weekday() + 7)
         end = start + timedelta(days=6)
-    else:  # current_month
+    else:
         start = today.replace(day=1)
         end = today
 
     start_str = start.strftime("%Y-%m-%d")
     end_str = end.strftime("%Y-%m-%d")
 
-    rows = fetch_jira_worklogs(start_str, end_str)
-    if rows is None:
-        return jsonify({"error": "JIRA credentials not configured. Upload an Excel file instead.", "data": []}), 200
-    return jsonify({"data": rows, "period": period, "start": start_str, "end": end_str})
+    result = fetch_jira_worklogs(start_str, end_str)
+    result["period"] = period
+    return jsonify(result), 200
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -380,6 +379,34 @@ def debug_config():
         "expected_hours": EXPECTED_HOURS,
     })
 
+
+@app.route("/api/debug/test-jira")
+def debug_test_jira():
+    """Test JIRA connectivity with a simple API call."""
+    if not JIRA_EMAIL or not JIRA_API_TOKEN:
+        return jsonify({"status": "error", "message": "Credentials not set"})
+    try:
+        resp = requests.get(
+            f"{JIRA_BASE_URL}/rest/api/3/myself",
+            headers=_jira_headers(),
+            auth=_jira_auth(),
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            user = resp.json()
+            return jsonify({
+                "status": "ok",
+                "connected_as": user.get("displayName"),
+                "email": user.get("emailAddress"),
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "http_code": resp.status_code,
+                "message": resp.text[:500],
+            })
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)})
 
 # ---------------------------------------------------------------------------
 # Main
