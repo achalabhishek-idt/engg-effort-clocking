@@ -1,0 +1,337 @@
+/* ============================================================
+   Engineering Resource Utilization Dashboard — eazyBI-inspired
+   ============================================================ */
+
+:root {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --border: #dfe1e6;
+    --text: #172b4d;
+    --text-secondary: #5e6c84;
+    --blue: #0052cc;
+    --blue-light: #deebff;
+    --green: #00875a;
+    --green-light: #e3fcef;
+    --amber: #ff991f;
+    --amber-light: #fff7e6;
+    --red: #de350b;
+    --red-light: #ffebe6;
+    --purple: #6554c0;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(23,43,77,.12), 0 0 1px rgba(23,43,77,.16);
+    --shadow-hover: 0 4px 8px rgba(23,43,77,.16), 0 0 1px rgba(23,43,77,.16);
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+/* ---- Top bar ---- */
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+.topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.topbar-left h1 {
+    font-size: 16px;
+    font-weight: 600;
+}
+.logo-icon { flex-shrink: 0; }
+.meta-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* ---- Period tabs ---- */
+.period-tabs {
+    display: flex;
+    gap: 0;
+    background: var(--surface);
+    border-bottom: 2px solid var(--border);
+    padding: 0 24px;
+}
+.tab {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all .2s;
+}
+.tab:hover { color: var(--blue); }
+.tab.active {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+    font-weight: 600;
+}
+
+/* ---- Upload ---- */
+.upload-panel { padding: 16px 24px; }
+.upload-panel.hidden { display: none; }
+.upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 40px;
+    text-align: center;
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color .2s;
+}
+.upload-zone:hover,
+.upload-zone.dragover {
+    border-color: var(--blue);
+    background: var(--blue-light);
+}
+.upload-link {
+    color: var(--blue);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+/* ---- KPI strip ---- */
+.kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    padding: 20px 24px;
+}
+.kpi-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: var(--shadow);
+    text-align: center;
+    transition: box-shadow .2s;
+}
+.kpi-card:hover { box-shadow: var(--shadow-hover); }
+.kpi-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.kpi-value {
+    display: block;
+    font-size: 28px;
+    font-weight: 700;
+}
+.highlight-blue .kpi-value { color: var(--blue); }
+.highlight-green .kpi-value { color: var(--green); }
+.highlight-amber .kpi-value { color: var(--amber); }
+.highlight-red .kpi-value { color: var(--red); }
+
+/* ---- Charts ---- */
+.charts-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    padding: 0 24px 20px;
+}
+.chart-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+.chart-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+.chart-card canvas {
+    width: 100% !important;
+    max-height: 350px;
+}
+
+/* ---- AI Insights ---- */
+.insights-section { padding: 0 24px 20px; }
+.insights-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+.insights-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+.insights-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+}
+.powered-by {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    margin-left: 6px;
+}
+.insights-body {
+    padding: 20px;
+    font-size: 14px;
+    line-height: 1.7;
+    white-space: pre-line;
+}
+.placeholder-text { color: var(--text-secondary); font-style: italic; }
+
+/* ---- Table ---- */
+.table-section { padding: 0 24px 24px; }
+.table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.search-input {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    width: 260px;
+    outline: none;
+    transition: border-color .2s;
+}
+.search-input:focus { border-color: var(--blue); }
+.table-actions { display: flex; gap: 8px; }
+.filter-select {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--surface);
+}
+.table-wrapper {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+thead th {
+    background: #f8f9fa;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+thead th:hover { color: var(--blue); }
+thead th.col-highlight {
+    background: var(--blue-light);
+    color: var(--blue);
+}
+tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    white-space: nowrap;
+}
+tbody tr:hover { background: #fafbfc; }
+
+/* Percentage badges */
+.badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 12px;
+}
+.badge-green { background: var(--green-light); color: var(--green); }
+.badge-amber { background: var(--amber-light); color: #b36b00; }
+.badge-red   { background: var(--red-light);   color: var(--red); }
+.badge-blue  { background: var(--blue-light);  color: var(--blue); }
+
+/* ---- Buttons ---- */
+.btn {
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: background .2s;
+}
+.btn-primary {
+    background: var(--blue);
+    color: #fff;
+}
+.btn-primary:hover { background: #0747a6; }
+.btn-secondary {
+    background: #f4f5f7;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: #ebecf0; }
+
+/* ---- Footer ---- */
+.footer {
+    text-align: center;
+    padding: 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+}
+.footer a { color: var(--blue); }
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+    .charts-row { grid-template-columns: 1fr; }
+    .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    .table-toolbar { flex-direction: column; }
+    .search-input { width: 100%; }
+}
+
+/* ---- Loading spinner ---- */
+.spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

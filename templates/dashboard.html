@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering Resource Utilization Matrix</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- Top nav bar -->
+<header class="topbar">
+    <div class="topbar-left">
+        <svg class="logo-icon" viewBox="0 0 32 32" width="28" height="28">
+            <rect rx="6" width="32" height="32" fill="#0052CC"/>
+            <text x="16" y="22" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">E</text>
+        </svg>
+        <h1>Engineering Resource Utilization Matrix</h1>
+    </div>
+    <div class="topbar-right">
+        <span id="lastUpdated" class="meta-text"></span>
+    </div>
+</header>
+
+<!-- Period tabs -->
+<nav class="period-tabs">
+    <button class="tab active" data-period="current_week">Current Week</button>
+    <button class="tab" data-period="current_month">Current Month</button>
+    <button class="tab" data-period="previous_month">Previous Month</button>
+    <button class="tab" data-period="upload">Upload Excel</button>
+</nav>
+
+<!-- Upload panel (hidden by default) -->
+<div id="uploadPanel" class="upload-panel hidden">
+    <div class="upload-zone" id="dropZone">
+        <p>📁 Drag & drop your <strong>.xlsx</strong> file here, or <label class="upload-link">click to browse
+            <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
+        </label></p>
+    </div>
+</div>
+
+<!-- KPI strip -->
+<section class="kpi-strip">
+    <div class="kpi-card">
+        <span class="kpi-label">Team Size</span>
+        <span class="kpi-value" id="kpiTeamSize">—</span>
+    </div>
+    <div class="kpi-card highlight-blue">
+        <span class="kpi-label">Avg Clocked %</span>
+        <span class="kpi-value" id="kpiClocked">—</span>
+    </div>
+    <div class="kpi-card highlight-green">
+        <span class="kpi-label">Avg Project %</span>
+        <span class="kpi-value" id="kpiProj">—</span>
+    </div>
+    <div class="kpi-card highlight-amber">
+        <span class="kpi-label">Avg General %</span>
+        <span class="kpi-value" id="kpiGeneral">—</span>
+    </div>
+    <div class="kpi-card">
+        <span class="kpi-label">≥75% Clocked</span>
+        <span class="kpi-value" id="kpiHealthy">—</span>
+    </div>
+    <div class="kpi-card highlight-red">
+        <span class="kpi-label">&lt;30% Clocked</span>
+        <span class="kpi-value" id="kpiLow">—</span>
+    </div>
+</section>
+
+<!-- Charts row -->
+<section class="charts-row">
+    <div class="chart-card wide">
+        <h3>Clocked % · Project % · General % — by Person</h3>
+        <canvas id="barChart"></canvas>
+    </div>
+    <div class="chart-card narrow">
+        <h3>Utilization Distribution</h3>
+        <canvas id="donutChart"></canvas>
+    </div>
+</section>
+
+<!-- AI Insights -->
+<section class="insights-section">
+    <div class="insights-card">
+        <div class="insights-header">
+            <h3>🤖 AI Insights <span class="powered-by">powered by Claude</span></h3>
+            <button id="btnInsights" class="btn btn-primary">Generate Insights</button>
+        </div>
+        <div id="insightsContent" class="insights-body">
+            <p class="placeholder-text">Click "Generate Insights" to get AI-powered analysis of your team's utilization.</p>
+        </div>
+    </div>
+</section>
+
+<!-- Data table -->
+<section class="table-section">
+    <div class="table-toolbar">
+        <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by name…">
+        <div class="table-actions">
+            <select id="filterSelect" class="filter-select">
+                <option value="all">All Members</option>
+                <option value="high">≥75% Clocked</option>
+                <option value="mid">40-75% Clocked</option>
+                <option value="low">&lt;40% Clocked</option>
+                <option value="over">Over 100%</option>
+            </select>
+            <button id="btnExport" class="btn btn-secondary">⬇ Export CSV</button>
+        </div>
+    </div>
+    <div class="table-wrapper">
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th data-sort="name">Name ↕</th>
+                    <th data-sort="total">Total Hrs ↕</th>
+                    <th data-sort="expected">Expected ↕</th>
+                    <th data-sort="clocked_pct" class="col-highlight">Clocked % ↕</th>
+                    <th data-sort="proj_pct" class="col-highlight">Proj % ↕</th>
+                    <th data-sort="general_pct" class="col-highlight">General % ↕</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</section>
+
+<footer class="footer">
+    <p>Engineering Effort Clocking Dashboard · Data refreshes daily at 09:00 AM IST · <a href="https://github.com/achalabhishek-idt/engg-effort-clocking" target="_blank">GitHub</a></p>
+</footer>
+
+<script src="/static/js/dashboard.js"></script>
+</body>
+</html>
