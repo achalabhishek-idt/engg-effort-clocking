@@ -62,5 +62,4 @@ jobs:
         id: deploy-to-webapp
         with:
           app-name: 'engg-effort-clocking'
-          slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_AB98E91F9FDE4B07B16023A4B83C74E4 }}
