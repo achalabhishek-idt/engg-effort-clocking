@@ -81,10 +81,10 @@ function renderKPIs() {
     document.getElementById("kpiLow").textContent = low;
 }
 
-// ── Bar chart (R, S, T columns) ────────────────────────────────
+// ── Bar chart (Total Hours, Project Hours, General Hours vs Expected) ──
 function renderBarChart() {
     const ctx = document.getElementById("barChart").getContext("2d");
-    const sorted = [...dashboardData].sort((a, b) => b.clocked_pct - a.clocked_pct).slice(0, 30);
+    const sorted = [...dashboardData].sort((a, b) => b.total - a.total).slice(0, 30);
     const labels = sorted.map(r => shortName(r.name));
 
     if (barChart) barChart.destroy();
@@ -94,22 +94,34 @@ function renderBarChart() {
             labels,
             datasets: [
                 {
-                    label: "Clocked %",
-                    data: sorted.map(r => +(r.clocked_pct * 100).toFixed(1)),
+                    label: "Expected Hours (Q)",
+                    data: sorted.map(r => r.expected),
+                    backgroundColor: "rgba(101, 84, 192, 0.25)",
+                    borderColor: "#6554C0",
+                    borderWidth: 2,
+                    borderRadius: 3,
+                    order: 1,
+                },
+                {
+                    label: "Total Clocked Hours",
+                    data: sorted.map(r => +r.total.toFixed(1)),
                     backgroundColor: "#0052CC",
                     borderRadius: 3,
+                    order: 2,
                 },
                 {
-                    label: "Proj %",
-                    data: sorted.map(r => +(r.proj_pct * 100).toFixed(1)),
+                    label: "Project Hours",
+                    data: sorted.map(r => +(r.total - (r.GEN || 0)).toFixed(1)),
                     backgroundColor: "#00875A",
                     borderRadius: 3,
+                    order: 3,
                 },
                 {
-                    label: "General %",
-                    data: sorted.map(r => +(r.general_pct * 100).toFixed(1)),
+                    label: "General/Overhead Hours",
+                    data: sorted.map(r => +(r.GEN || 0).toFixed(1)),
                     backgroundColor: "#FF991F",
                     borderRadius: 3,
+                    order: 4,
                 },
             ],
         },
@@ -118,15 +130,18 @@ function renderBarChart() {
             maintainAspectRatio: false,
             plugins: {
                 legend: { position: "top", labels: { font: { size: 11 } } },
-                tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw}%` } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: ${ctx.raw} hrs`
+                    }
+                },
             },
             scales: {
                 x: { ticks: { font: { size: 10 }, maxRotation: 55, minRotation: 35 } },
                 y: {
                     beginAtZero: true,
-                    max: 120,
-                    ticks: { callback: v => v + "%" },
-                    title: { display: true, text: "Percentage" },
+                    ticks: { callback: v => v + "h" },
+                    title: { display: true, text: "Hours" },
                 },
             },
         },

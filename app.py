@@ -298,6 +298,61 @@ def _fallback_insights(data: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def load_team_roster():
+    """Load fixed team roster from JSON file."""
+    roster_path = os.path.join(os.path.dirname(__file__), 'team_roster.json')
+    try:
+        with open(roster_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.warning("team_roster.json not found")
+        return {"members": [], "expected_hours": 168}
+
+
+def merge_roster_with_worklogs(worklogs: list[dict]) -> list[dict]:
+    """Merge fixed roster with actual worklogs.
+    People with 0 hours still appear in the dashboard."""
+    roster = load_team_roster()
+    
+    # Build lookup from worklogs by name
+    worklog_map = {r["name"].lower().strip(): r for r in worklogs}
+    
+    merged = []
+    for member in roster["members"]:
+        name = member["name"]
+        name_key = name.lower().strip()
+        
+        if name_key in worklog_map:
+            # Has worklogs — use actual data
+            row = worklog_map.pop(name_key)
+            row["role"] = member.get("role", "")
+            row["in_roster"] = True
+            merged.append(row)
+        else:
+            # No worklogs — show as 0 hours (RED flag!)
+            merged.append({
+                "name": name,
+                "role": member.get("role", ""),
+                "email": member.get("email", ""),
+                "total": 0,
+                "expected": roster["expected_hours"],
+                "clocked_pct": 0,
+                "proj_pct": 0,
+                "general_pct": 0,
+                "in_roster": True,
+                **{col: 0 for col in PROJECT_COLUMNS},
+            })
+    
+# People who logged time but AREN'T in roster (contractors, new joiners?)
+
+    for name_key, row in worklog_map.items():
+        row["in_roster"] = False
+        row["role"] = "Unknown"
+        merged.append(row)
+    
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -331,9 +386,17 @@ def api_data():
     end_str = end.strftime("%Y-%m-%d")
 
     result = fetch_jira_worklogs(start_str, end_str)
-    result["period"] = period
-    return jsonify(result), 200
 
+    # Merge with fixed 111-member roster
+    if "data" in result:
+        result["data"] = merge_roster_with_worklogs(result.get("data", []))
+    else:
+        result["data"] = merge_roster_with_worklogs([])
+
+    result["period"] = period
+    result["team_size"] = len(result["data"])
+    result["roster_size"] = 111
+    return jsonify(result), 200
 
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
