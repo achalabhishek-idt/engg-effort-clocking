@@ -52,6 +52,29 @@ def _jira_headers():
 def _jira_auth():
     return (JIRA_EMAIL, JIRA_API_TOKEN)
 
+def _fetch_full_worklogs(issue_key):
+    """Fetch ALL worklogs for an issue (handles pagination beyond 20)."""
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/worklog"
+    all_worklogs = []
+    start_at = 0
+
+    while True:
+        try:
+            resp = requests.get(
+                url, headers=_jira_headers(), auth=_jira_auth(),
+                params={"startAt": start_at, "maxResults": 100}, timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            all_worklogs.extend(data.get("worklogs", []))
+            if start_at + 100 >= data.get("total", 0):
+                break
+            start_at += 100
+        except requests.RequestException as exc:
+            logger.error("Worklog fetch error for %s: %s", issue_key, exc)
+            break
+    return all_worklogs
+
 
 def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | None = None):
     """Fetch worklogs from JIRA Cloud REST API within a date range."""
@@ -94,6 +117,12 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
             data = resp.json()
             issues = data.get("issues", [])
             all_issues.extend(issues)
+            for issue in all_issues:
+                wl_info = issue.get("fields", {}).get("worklog", {})
+                if wl_info.get("total", 0) > wl_info.get("maxResults", 20):
+                    key = issue.get("key")
+                    logger.info("Issue %s has %d worklogs (>20), fetching full list...", key, wl_info["total"])
+                    issue["fields"]["worklog"]["worklogs"] = _fetch_full_worklogs(key)
             total = data.get("total", 0)
             logger.info("JIRA: %d/%d issues fetched", start_at + len(issues), total)
 
@@ -137,10 +166,12 @@ def _transform_worklogs(issues, start_date, end_date):
                 continue
 
             author = wl.get("author", {}).get("displayName", "Unknown")
+            author_email = wl.get("author", {}).get("emailAddress", "")
             hours = wl.get("timeSpentSeconds", 0) / 3600
 
             if author not in records:
                 records[author] = {col: 0.0 for col in PROJECT_COLUMNS}
+                records[author]["_email"] = author_email
             
             # Map project key to column (customer projects, general, or unknown)
             if project_key in PROJECT_COLUMNS:
@@ -157,11 +188,14 @@ def _transform_worklogs(issues, start_date, end_date):
 
     rows = []
     for person, hours_map in records.items():
+        email = hours_map.pop("_email", "")  # Extract email BEFORE summing
         total = sum(hours_map.values())
         gen_hours = hours_map.get("GEN", 0.0)
         proj_hours = total - gen_hours
+        email = hours_map.pop("_email", "")  # Remove _email before spreading
         rows.append({
             "name": person,
+            "email": email,
             **hours_map,
             "total": round(total, 2),
             "expected": EXPECTED_HOURS,
@@ -169,7 +203,7 @@ def _transform_worklogs(issues, start_date, end_date):
             "proj_pct": round(proj_hours / EXPECTED_HOURS, 4) if EXPECTED_HOURS else 0,
             "general_pct": round(gen_hours / EXPECTED_HOURS, 4) if EXPECTED_HOURS else 0,
         })
-    
+
     # Sort by total hours (descending)
     rows.sort(key=lambda r: r["total"], reverse=True)
     logger.info("Returning %d employee records", len(rows))
@@ -361,7 +395,6 @@ def merge_roster_with_worklogs(worklogs: list[dict]) -> list[dict]:
                 len(roster.get("members", [])), len(matched_keys),
                 sum(1 for r in merged if not r.get("in_roster", True)))
     return merged
-
 
 # ---------------------------------------------------------------------------
 # Routes
