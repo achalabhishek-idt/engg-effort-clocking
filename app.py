@@ -117,12 +117,6 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
             data = resp.json()
             issues = data.get("issues", [])
             all_issues.extend(issues)
-            for issue in all_issues:
-                wl_info = issue.get("fields", {}).get("worklog", {})
-                if wl_info.get("total", 0) > wl_info.get("maxResults", 20):
-                    key = issue.get("key")
-                    logger.info("Issue %s has %d worklogs (>20), fetching full list...", key, wl_info["total"])
-                    issue["fields"]["worklog"]["worklogs"] = _fetch_full_worklogs(key)
             total = data.get("total", 0)
             logger.info("JIRA: %d/%d issues fetched", start_at + len(issues), total)
 
@@ -133,9 +127,17 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
             logger.error("JIRA API error: %s", exc)
             return {"error": f"JIRA API connection error: {str(exc)}", "data": []}
 
+    # Fix truncated worklogs — OUTSIDE the while loop, runs ONCE
+    for issue in all_issues:
+        wl_info = issue.get("fields", {}).get("worklog", {})
+        if wl_info.get("total", 0) > wl_info.get("maxResults", 20):
+            key = issue.get("key")
+            logger.info("Issue %s has %d worklogs (>20), fetching full list...",
+                        key, wl_info["total"])
+            issue["fields"]["worklog"]["worklogs"] = _fetch_full_worklogs(key)
+
     rows = _transform_worklogs(all_issues, start_date, end_date)
     return {"data": rows, "start": start_date, "end": end_date}
-
 
 def _transform_worklogs(issues, start_date, end_date):
     """Transform JIRA issues with worklogs into the utilization matrix.
