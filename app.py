@@ -16,6 +16,17 @@ import requests
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from dotenv import load_dotenv
 
+# JIRA display name → Excel roster name mapping
+NAME_MAP = {
+    "Aditya Verma": "Aditya Kumar Verma",
+    "Pradeep C": "Pradeepa C",           # verify in Excel
+    "Rajashekar Murthy": "Raja Sekhar Murthy Elluru",  # verify in Excel
+    "J Leena": "Leena J",
+    "R Swathi": "Swathi R",
+    "Sachin B Biradarpatil": "Sachin B",
+    "Vadiraj CG": "Vadiraj C G",
+}
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -359,6 +370,31 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
     expected = expected_override or roster.get("expected_hours", EXPECTED_HOURS)
 
     # Build lookups by name AND email
+    # JIRA display name → Excel roster name mapping
+    worklog_by_name = {r["name"].lower().strip(): r for r in worklogs}  # ← existing line 373
+    # Apply name mapping: add Excel name aliases for JIRA names
+    for jira_name, excel_name in NAME_MAP.items():
+        jira_key = jira_name.lower().strip()
+        if jira_key in worklog_by_name:
+            worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]
+    worklog_by_name = {r["name"].lower().strip(): r for r in worklogs} 
+    # Apply name mapping: add Excel name aliases for JIRA names
+    for jira_name, excel_name in NAME_MAP.items():
+        jira_name, excel_name in NAME_MAP.items():
+        jira_key = jira_name.lower().strip()
+        if jira_key in worklog_by_name:
+            worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]
+    NAME_MAP = {
+        "Aditya Verma": "Aditya Kumar Verma",
+        "Pradeep C": "Pradeepa C",
+        "Rajashekar Murthy": "Raja Sekhar Murthy Elluru",
+    # Add remaining after checking Excel:
+       "J Leena": "Leena J",
+       "R Swathi": "Swathi R",
+       "Sachin Biradarpatil": "Sachin ...",
+        "Vadiraj CG": "Vadiraj C G",
+}
+    
     worklog_by_name = {r["name"].lower().strip(): r for r in worklogs}
     worklog_by_email = {}
     for r in worklogs:
@@ -405,6 +441,21 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
     logger.info("Roster merge: %d roster, %d matched, %d not in roster",
                 len(roster.get("members", [])), len(matched_keys),
                 sum(1 for r in merged if not r.get("in_roster", True)))
+    
+    # Log JIRA users NOT in Excel roster
+    roster_names = {r["name"].strip().lower() for r in roster.get("members", [])}
+    jira_names = {w["name"] for w in worklogs}
+    not_in_roster = [n for n in sorted(jira_names) if n.strip().lower() not in roster_names]
+    logger.info("=== JIRA USERS NOT IN ROSTER (%d) ===", len(not_in_roster))
+    for name in not_in_roster:
+        logger.info("  NOT IN ROSTER: %s", name)
+
+    # Log roster members with 0 hours
+    zero_hours = [r["name"] for r in merged if r.get("total", 0) == 0]
+    logger.info("=== ROSTER MEMBERS WITH 0 HOURS (%d) ===", len(zero_hours))
+    for name in sorted(zero_hours):
+        logger.info("  ZERO HOURS: %s", name)
+
     return merged
 
 # ---------------------------------------------------------------------------
