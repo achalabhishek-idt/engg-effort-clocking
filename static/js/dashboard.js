@@ -41,17 +41,29 @@ function setupTabs() {
 
 // ── Data loading ───────────────────────────────────────────────
 async function loadPeriod(period) {
+    document.getElementById("insightsContent").innerHTML =
+        '<span class="spinner"></span> Loading data from JIRA…';
     try {
         const res = await fetch(`/api/data?period=${period}`);
         const json = await res.json();
         if (json.data && json.data.length) {
             dashboardData = json.data;
             renderAll();
+            document.getElementById("insightsContent").innerHTML =
+                '<p class="placeholder-text">Click "Generate Insights" for AI analysis.</p>';
         } else if (json.error) {
-            console.info("API hint:", json.error);
+            document.getElementById("insightsContent").innerHTML =
+                `<p style="color:#de350b">⚠️ ${json.error}</p>
+                 <p>Use the <strong>Upload Excel</strong> tab to load data manually.</p>`;
+        } else {
+            document.getElementById("insightsContent").innerHTML =
+                `<p style="color:#ff991f">⚠️ No worklogs found for this period.</p>
+                 <p>Try <strong>Previous Month</strong> or <strong>Upload Excel</strong>.</p>`;
         }
     } catch (e) {
         console.error("Load error:", e);
+        document.getElementById("insightsContent").innerHTML =
+            `<p style="color:#de350b">❌ Connection error: ${e.message}</p>`;
     }
 }
 

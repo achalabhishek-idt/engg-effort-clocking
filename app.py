@@ -310,46 +310,56 @@ def load_team_roster():
 
 
 def merge_roster_with_worklogs(worklogs: list[dict]) -> list[dict]:
-    """Merge fixed roster with actual worklogs.
-    People with 0 hours still appear in the dashboard."""
     roster = load_team_roster()
-    
-    # Build lookup from worklogs by name
-    worklog_map = {r["name"].lower().strip(): r for r in worklogs}
-    
+    expected = roster.get("expected_hours", EXPECTED_HOURS)
+
+    # Build lookups by name AND email
+    worklog_by_name = {r["name"].lower().strip(): r for r in worklogs}
+    worklog_by_email = {}
+    for r in worklogs:
+        email = r.get("email", "").lower().strip()
+        if email:
+            worklog_by_email[email] = r
+
     merged = []
-    for member in roster["members"]:
+    matched_keys = set()
+
+    for member in roster.get("members", []):
         name = member["name"]
         name_key = name.lower().strip()
-        
-        if name_key in worklog_map:
-            # Has worklogs — use actual data
-            row = worklog_map.pop(name_key)
-            row["role"] = member.get("role", "")
+        email_key = member.get("email", "").lower().strip()
+
+        # Try name match first, then email fallback
+        row = worklog_by_name.get(name_key) or worklog_by_email.get(email_key)
+
+        if row:
             row["in_roster"] = True
+            row["email"] = member.get("email", "")
+            matched_keys.add(row["name"].lower().strip())
             merged.append(row)
         else:
-            # No worklogs — show as 0 hours (RED flag!)
             merged.append({
                 "name": name,
-                "role": member.get("role", ""),
                 "email": member.get("email", ""),
+                "in_roster": True,
                 "total": 0,
-                "expected": roster["expected_hours"],
+                "expected": expected,
                 "clocked_pct": 0,
                 "proj_pct": 0,
                 "general_pct": 0,
-                "in_roster": True,
                 **{col: 0 for col in PROJECT_COLUMNS},
             })
-    
-# People who logged time but AREN'T in roster (contractors, new joiners?)
 
-    for name_key, row in worklog_map.items():
-        row["in_roster"] = False
-        row["role"] = "Unknown"
-        merged.append(row)
-    
+    for r in worklogs:
+        if r["name"].lower().strip() not in matched_keys:
+            r["in_roster"] = False
+            r["email"] = r.get("email", "")
+            merged.append(r)
+
+    merged.sort(key=lambda r: (not r.get("in_roster", True), -r.get("total", 0)))
+    logger.info("Roster merge: %d roster, %d matched, %d not in roster",
+                len(roster.get("members", [])), len(matched_keys),
+                sum(1 for r in merged if not r.get("in_roster", True)))
     return merged
 
 
