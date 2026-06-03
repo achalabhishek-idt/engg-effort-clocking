@@ -100,104 +100,170 @@ function renderBarChart() {
     
     // Sort by total hours descending
     const sorted = [...dashboardData].sort((a, b) => b.total - a.total);
-    const labels = sorted.map(r => shortName(r.name));
-    
-    // Dynamic width: 35px per person, minimum 800px
-    const chartWidth = Math.max(800, sorted.length * 35);
-    
-    // Make container horizontally scrollable
-    container.style.overflowX = "auto";
-    container.style.overflowY = "hidden";
-    container.style.position = "relative";
-    
-    // Resize canvas to fit all bars
-    const canvas = document.getElementById("barChart");
-    canvas.style.width = chartWidth + "px";
-    canvas.style.minWidth = chartWidth + "px";
-    canvas.style.height = "420px";
-    
-    const ctx = canvas.getContext("2d");
+    const labels = sorted.map(r => r.name);
+    const expected = sorted.length > 0 ? sorted[0].expected : 168;
 
+    // Dynamic height: 28px per person, minimum 500px
+    const chartHeight = Math.max(500, sorted.length * 28);
+
+    // Make container scrollable
+    container.style.overflowY = "auto";
+    container.style.overflowX = "hidden";
+    container.style.maxHeight = "600px";
+    container.style.position = "relative";
+
+    // Resize canvas
+    const canvas = document.getElementById("barChart");
+    canvas.style.height = chartHeight + "px";
+    canvas.style.minHeight = chartHeight + "px";
+    canvas.style.width = "100%";
+
+    const ctx = canvas.getContext("2d");
     if (barChart) barChart.destroy();
+
+    // Color based on percentage
+    const getColor = (total, expected) => {
+        const pct = total / expected;
+        if (pct >= 1.0) return { bg: "rgba(0, 135, 90, 0.8)",  border: "#00875A" };  // Green
+        if (pct >= 0.75) return { bg: "rgba(0, 82, 204, 0.8)",  border: "#0052CC" };  // Blue
+        if (pct > 0)     return { bg: "rgba(255, 153, 31, 0.8)", border: "#FF991F" };  // Orange
+        return              { bg: "rgba(222, 53, 11, 0.7)",  border: "#DE350B" };      // Red
+    };
+
+    const bgColors = sorted.map(r => getColor(r.total, r.expected).bg);
+    const borderColors = sorted.map(r => getColor(r.total, r.expected).border);
+
     barChart = new Chart(ctx, {
         type: "bar",
         data: {
             labels,
             datasets: [
                 {
-                    label: "Expected Hours",
-                    data: sorted.map(r => r.expected),
-                    backgroundColor: "rgba(101, 84, 192, 0.15)",
-                    borderColor: "#6554C0",
-                    borderWidth: 1.5,
-                    borderDash: [4, 2],
-                    borderRadius: 2,
-                    order: 4,
-                    barPercentage: 0.9,
+                    label: "Clocked Hours",
+                    data: sorted.map(r => +r.total.toFixed(1)),
+                    backgroundColor: bgColors,
+                    borderColor: borderColors,
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    barPercentage: 0.7,
                     categoryPercentage: 0.85,
                 },
                 {
-                    label: "Total Clocked",
-                    data: sorted.map(r => +r.total.toFixed(1)),
-                    backgroundColor: sorted.map(r =>
-                        r.total >= r.expected ? "#00875A" :
-                        r.total >= r.expected * 0.75 ? "#0052CC" :
-                        r.total > 0 ? "#FF991F" : "#DE350B"
-                    ),
-                    borderRadius: 3,
-                    order: 1,
-                    barPercentage: 0.7,
+                    label: `Expected (${expected}h)`,
+                    data: sorted.map(() => expected),
+                    backgroundColor: "rgba(0,0,0,0)",
+                    borderColor: "rgba(101, 84, 192, 0.5)",
+                    borderWidth: 2,
+                    borderDash: [6, 3],
+                    borderRadius: 2,
+                    barPercentage: 0.85,
                     categoryPercentage: 0.85,
+                    borderSkipped: false,
                 },
             ],
         },
         options: {
+            indexAxis: "y",       // ← HORIZONTAL bars
             responsive: false,
             maintainAspectRatio: false,
-            animation: { duration: 600 },
+            animation: { duration: 500 },
+            layout: {
+                padding: { right: 40 }
+            },
             plugins: {
                 legend: {
                     position: "top",
-                    labels: { font: { size: 11 }, usePointStyle: true, padding: 20 },
+                    labels: {
+                        font: { size: 12, family: "'Segoe UI', sans-serif" },
+                        usePointStyle: true,
+                        pointStyle: "rectRounded",
+                        padding: 20,
+                    },
                 },
                 tooltip: {
                     backgroundColor: "#172B4D",
-                    titleFont: { size: 13 },
+                    titleFont: { size: 13, weight: "bold" },
                     bodyFont: { size: 12 },
-                    padding: 12,
+                    padding: 14,
+                    cornerRadius: 8,
+                    displayColors: true,
                     callbacks: {
                         title: ctx => sorted[ctx[0].dataIndex].name,
                         label: ctx => {
                             const row = sorted[ctx.dataIndex];
-                            if (ctx.dataset.label === "Expected Hours") {
-                                return `Expected: ${row.expected}h`;
+                            if (ctx.dataset.label.startsWith("Expected")) {
+                                return ` Expected: ${row.expected}h`;
                             }
                             const pct = ((row.total / row.expected) * 100).toFixed(0);
-                            return `Clocked: ${row.total.toFixed(1)}h (${pct}%)`;
+                            const status = pct >= 100 ? "✅" : pct >= 75 ? "🔵" : pct > 0 ? "⚠️" : "🔴";
+                            return ` Clocked: ${row.total.toFixed(1)}h / ${row.expected}h (${pct}%) ${status}`;
+                        },
+                        afterBody: ctx => {
+                            const row = sorted[ctx[0].dataIndex];
+                            const projects = Object.entries(row)
+                                .filter(([k, v]) => typeof v === "number" && v > 0 &&
+                                    !["total","expected","clocked_pct","proj_pct","general_pct"].includes(k))
+                                .sort((a, b) => b[1] - a[1])
+                                .map(([k, v]) => `   ${k}: ${v.toFixed(1)}h`)
+                                .slice(0, 5);
+                            return projects.length ? ["\n Projects:", ...projects] : [];
                         },
                     },
                 },
+                // Percentage labels at end of bars
+                datalabels: false,
             },
             scales: {
                 x: {
-                    ticks: {
-                        font: { size: 10 },
-                        maxRotation: 60,
-                        minRotation: 45,
-                    },
-                    grid: { display: false },
-                },
-                y: {
                     beginAtZero: true,
+                    grid: { color: "rgba(0,0,0,0.05)" },
                     ticks: {
                         callback: v => v + "h",
                         font: { size: 11 },
                     },
-                    title: { display: true, text: "Hours", font: { size: 12 } },
-                    grid: { color: "rgba(0,0,0,0.06)" },
+                    title: {
+                        display: true,
+                        text: "Hours",
+                        font: { size: 13, weight: "bold" },
+                    },
+                },
+                y: {
+                    grid: { display: false },
+                    ticks: {
+                        font: { size: 11, family: "'Segoe UI', sans-serif" },
+                        mirror: false,
+                        padding: 8,
+                    },
                 },
             },
         },
+        // Custom plugin: draw percentage at the end of each bar
+        plugins: [{
+            id: "barLabels",
+            afterDatasetsDraw(chart) {
+                const dataset = chart.data.datasets[0];
+                const meta = chart.getDatasetMeta(0);
+                const ctx = chart.ctx;
+
+                ctx.save();
+                ctx.font = "bold 10px 'Segoe UI', sans-serif";
+                ctx.textAlign = "left";
+                ctx.textBaseline = "middle";
+
+                meta.data.forEach((bar, i) => {
+                    const row = sorted[i];
+                    const pct = ((row.total / row.expected) * 100).toFixed(0);
+                    const x = bar.x + 6;
+                    const y = bar.y;
+
+                    ctx.fillStyle = pct >= 100 ? "#00875A" :
+                                    pct >= 75  ? "#0052CC" :
+                                    pct > 0    ? "#FF991F" : "#DE350B";
+                    ctx.fillText(`${pct}%`, x, y);
+                });
+                ctx.restore();
+            },
+        }],
     });
 }
 
