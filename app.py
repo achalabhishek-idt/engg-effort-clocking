@@ -93,20 +93,22 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
     all_issues = []
     start_at = 0
     max_results = 100
+    next_token = None
 
     logger.info("JIRA Query: %s", jql)
 
     while True:
         params = {
             "jql": jql,
-            "startAt": start_at,
             "maxResults": max_results,
             "fields": "worklog,project,summary,assignee",
         }
+        if next_token:
+            params["nextPageToken"] = next_token
+
         try:
             resp = requests.get(url, headers=_jira_headers(), auth=_jira_auth(),
-                                params=params, timeout=30)
-            
+                                params=params, timeout=30)            
             # ── Return the REAL error instead of hiding it ──
             if resp.status_code == 401:
                 return {"error": "JIRA returned 401 Unauthorized. Check JIRA_EMAIL and JIRA_API_TOKEN.", "data": []}
@@ -117,12 +119,12 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
             data = resp.json()
             issues = data.get("issues", [])
             all_issues.extend(issues)
-            total = data.get("total", 0)
+            total = data.get("total", 0) or len(all_issues) + 1  # Fallback if total is missing
             logger.info("JIRA: %d/%d issues fetched", start_at + len(issues), total)
 
-            if start_at + max_results >= total:
+            next_token = data.get("nextPageToken")
+            if not next_token or len(issues) < max_results:
                 break
-            start_at += max_results
         except requests.RequestException as exc:
             logger.error("JIRA API error: %s", exc)
             return {"error": f"JIRA API connection error: {str(exc)}", "data": []}
