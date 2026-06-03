@@ -164,7 +164,12 @@ def _transform_worklogs(issues, start_date, end_date):
                 continue
             if not (sd <= wl_date <= ed):
                 continue
-
+            # DEBUG — remove after testing
+            author_dbg = wl.get("author", {}).get("displayName", "")
+            hrs_dbg = wl.get("timeSpentSeconds", 0) / 3600
+            if author_dbg == "Achal Abhishek":
+                logger.info("DEBUG INCLUDED: %s | %s | %.1fh | issue=%s",
+                            author_dbg, started, hrs_dbg, issue_key)
             author = wl.get("author", {}).get("displayName", "Unknown")
             author_email = wl.get("author", {}).get("emailAddress", "")
             hours = wl.get("timeSpentSeconds", 0) / 3600
@@ -343,9 +348,11 @@ def load_team_roster():
         return {"members": [], "expected_hours": 168}
 
 
-def merge_roster_with_worklogs(worklogs: list[dict]) -> list[dict]:
+def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> list[dict]:
     roster = load_team_roster()
-    expected = roster.get("expected_hours", EXPECTED_HOURS)
+    expected = expected_override or roster.get("expected_hours", EXPECTED_HOURS)
+    roster = load_team_roster()
+    expected = expected_override or roster.get("expected_hours", EXPECTED_HOURS)
 
     # Build lookups by name AND email
     worklog_by_name = {r["name"].lower().strip(): r for r in worklogs}
@@ -428,15 +435,34 @@ def api_data():
     start_str = start.strftime("%Y-%m-%d")
     end_str = end.strftime("%Y-%m-%d")
 
+    # Dynamic expected hours based on period
+    if period in ("current_week", "previous_week"):
+        period_expected = 40   # 8h × 5 days
+    else:
+        period_expected = EXPECTED_HOURS  # 168h for monthly   
+
+    # Dynamic expected hours based on period
+    if period in ("current_week", "previous_week"):
+        period_expected = 40   # 8h × 5 days
+    else:
+        period_expected = EXPECTED_HOURS  # 168h for monthly
+
     result = fetch_jira_worklogs(start_str, end_str)
 
     # Merge with fixed 111-member roster
     if "data" in result:
-        result["data"] = merge_roster_with_worklogs(result.get("data", []))
+        result["data"] = merge_roster_with_worklogs(result.get("data", []), period_expected)
     else:
-        result["data"] = merge_roster_with_worklogs([])
+        result["data"] = merge_roster_with_worklogs([], period_expected)
+
+    # Recalculate percentages with period-correct expected hours
+    for row in result["data"]:
+        row["expected"] = period_expected
+        total = row.get("total", 0)
+        row["clocked_pct"] = round(total / period_expected, 4) if period_expected else 0
 
     result["period"] = period
+    result["expected_hours"] = period_expected
     result["team_size"] = len(result["data"])
     result["roster_size"] = 111
     return jsonify(result), 200

@@ -93,11 +93,30 @@ function renderKPIs() {
     document.getElementById("kpiLow").textContent = low;
 }
 
-// ── Bar chart (Total Hours, Project Hours, General Hours vs Expected) ──
+
+// ── Bar chart (scrollable, professional) ──
 function renderBarChart() {
-    const ctx = document.getElementById("barChart").getContext("2d");
-    const sorted = [...dashboardData].sort((a, b) => b.total - a.total).slice(0, 30);
+    const container = document.getElementById("barChart").parentElement;
+    
+    // Sort by total hours descending
+    const sorted = [...dashboardData].sort((a, b) => b.total - a.total);
     const labels = sorted.map(r => shortName(r.name));
+    
+    // Dynamic width: 35px per person, minimum 800px
+    const chartWidth = Math.max(800, sorted.length * 35);
+    
+    // Make container horizontally scrollable
+    container.style.overflowX = "auto";
+    container.style.overflowY = "hidden";
+    container.style.position = "relative";
+    
+    // Resize canvas to fit all bars
+    const canvas = document.getElementById("barChart");
+    canvas.style.width = chartWidth + "px";
+    canvas.style.minWidth = chartWidth + "px";
+    canvas.style.height = "420px";
+    
+    const ctx = canvas.getContext("2d");
 
     if (barChart) barChart.destroy();
     barChart = new Chart(ctx, {
@@ -106,54 +125,76 @@ function renderBarChart() {
             labels,
             datasets: [
                 {
-                    label: "Expected Hours (Q)",
+                    label: "Expected Hours",
                     data: sorted.map(r => r.expected),
-                    backgroundColor: "rgba(101, 84, 192, 0.25)",
+                    backgroundColor: "rgba(101, 84, 192, 0.15)",
                     borderColor: "#6554C0",
-                    borderWidth: 2,
+                    borderWidth: 1.5,
+                    borderDash: [4, 2],
+                    borderRadius: 2,
+                    order: 4,
+                    barPercentage: 0.9,
+                    categoryPercentage: 0.85,
+                },
+                {
+                    label: "Total Clocked",
+                    data: sorted.map(r => +r.total.toFixed(1)),
+                    backgroundColor: sorted.map(r =>
+                        r.total >= r.expected ? "#00875A" :
+                        r.total >= r.expected * 0.75 ? "#0052CC" :
+                        r.total > 0 ? "#FF991F" : "#DE350B"
+                    ),
                     borderRadius: 3,
                     order: 1,
-                },
-                {
-                    label: "Total Clocked Hours",
-                    data: sorted.map(r => +r.total.toFixed(1)),
-                    backgroundColor: "#0052CC",
-                    borderRadius: 3,
-                    order: 2,
-                },
-                {
-                    label: "Project Hours",
-                    data: sorted.map(r => +(r.total - (r.GEN || 0)).toFixed(1)),
-                    backgroundColor: "#00875A",
-                    borderRadius: 3,
-                    order: 3,
-                },
-                {
-                    label: "General/Overhead Hours",
-                    data: sorted.map(r => +(r.GEN || 0).toFixed(1)),
-                    backgroundColor: "#FF991F",
-                    borderRadius: 3,
-                    order: 4,
+                    barPercentage: 0.7,
+                    categoryPercentage: 0.85,
                 },
             ],
         },
         options: {
-            responsive: true,
+            responsive: false,
             maintainAspectRatio: false,
+            animation: { duration: 600 },
             plugins: {
-                legend: { position: "top", labels: { font: { size: 11 } } },
+                legend: {
+                    position: "top",
+                    labels: { font: { size: 11 }, usePointStyle: true, padding: 20 },
+                },
                 tooltip: {
+                    backgroundColor: "#172B4D",
+                    titleFont: { size: 13 },
+                    bodyFont: { size: 12 },
+                    padding: 12,
                     callbacks: {
-                        label: ctx => `${ctx.dataset.label}: ${ctx.raw} hrs`
-                    }
+                        title: ctx => sorted[ctx[0].dataIndex].name,
+                        label: ctx => {
+                            const row = sorted[ctx.dataIndex];
+                            if (ctx.dataset.label === "Expected Hours") {
+                                return `Expected: ${row.expected}h`;
+                            }
+                            const pct = ((row.total / row.expected) * 100).toFixed(0);
+                            return `Clocked: ${row.total.toFixed(1)}h (${pct}%)`;
+                        },
+                    },
                 },
             },
             scales: {
-                x: { ticks: { font: { size: 10 }, maxRotation: 55, minRotation: 35 } },
+                x: {
+                    ticks: {
+                        font: { size: 10 },
+                        maxRotation: 60,
+                        minRotation: 45,
+                    },
+                    grid: { display: false },
+                },
                 y: {
                     beginAtZero: true,
-                    ticks: { callback: v => v + "h" },
-                    title: { display: true, text: "Hours" },
+                    ticks: {
+                        callback: v => v + "h",
+                        font: { size: 11 },
+                    },
+                    title: { display: true, text: "Hours", font: { size: 12 } },
+                    grid: { color: "rgba(0,0,0,0.06)" },
                 },
             },
         },
