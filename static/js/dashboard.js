@@ -41,6 +41,7 @@ function setupTabs() {
 
 // ── Data loading ───────────────────────────────────────────────
 async function loadPeriod(period) {
+    showLoading();
     document.getElementById("insightsContent").innerHTML =
         '<span class="spinner"></span> Loading data from JIRA…';
     try {
@@ -64,6 +65,8 @@ async function loadPeriod(period) {
         console.error("Load error:", e);
         document.getElementById("insightsContent").innerHTML =
             `<p style="color:#de350b">❌ Connection error: ${e.message}</p>`;
+    }   finally {
+        hideLoading();
     }
 }
 
@@ -117,12 +120,12 @@ function renderBarChart() {
     }
 
     // Dynamic height: 32px per person, minimum 400px
-    const chartHeight = Math.max(400, logged.length * 32);
+    const chartHeight = logged.length * 38 + 60;  // tight fit: 38px per bar + padding
+    canvas.height = chartHeight;
     canvas.style.height = chartHeight + "px";
-    canvas.style.minHeight = chartHeight + "px";
     canvas.style.width = "100%";
     container.style.maxHeight = "600px";
-    container.style.overflowY = "auto";
+    container.style.overflowY = chartHeight > 600 ? "auto" : "hidden";
 
     // Color based on percentage
     const getColor = (total, exp) => {
@@ -167,7 +170,7 @@ function renderBarChart() {
         },
         options: {
             indexAxis: "y",
-            responsive: false,
+            responsive: true,
             maintainAspectRatio: false,
             animation: { duration: 500 },
             layout: { padding: { right: 50 } },
@@ -438,3 +441,14 @@ function escHtml(s) {
     d.textContent = s;
     return d.innerHTML;
 }
+
+function showLoading() {
+    document.getElementById("loadingOverlay").style.display = "flex";
+}
+
+function hideLoading() {
+    document.getElementById("loadingOverlay").style.display = "none";
+}
+
+// Call showLoading() BEFORE your fetch call
+// Call hideLoading() AFTER data is rendered

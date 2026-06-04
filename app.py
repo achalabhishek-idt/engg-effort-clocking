@@ -15,6 +15,11 @@ import pandas as pd
 import requests
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+
+CACHE = {}
+CACHE_TTL = 300  # 5 minutes
 
 # JIRA display name → Excel roster name mapping
 NAME_MAP = {
@@ -140,14 +145,22 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
             logger.error("JIRA API error: %s", exc)
             return {"error": f"JIRA API connection error: {str(exc)}", "data": []}
 
-    # Fix truncated worklogs — OUTSIDE the while loop, runs ONCE
-    for issue in all_issues:
-        wl_info = issue.get("fields", {}).get("worklog", {})
-        if wl_info.get("total", 0) > wl_info.get("maxResults", 20):
-            key = issue.get("key")
-            logger.info("Issue %s has %d worklogs (>20), fetching full list...",
-                        key, wl_info["total"])
-            issue["fields"]["worklog"]["worklogs"] = _fetch_full_worklogs(key)
+    # ── Parallel fetch full worklogs for issues with 20+ entries ──
+    needs_full = [
+        iss for iss in all_issues
+        if iss.get("fields", {}).get("worklog", {}).get("total", 0)
+         > iss.get("fields", {}).get("worklog", {}).get("maxResults", 20)
+    ]
+    logger.info("Fetching full worklogs for %d issues in parallel...", len(needs_full))
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_fetch_full_worklogs, iss["key"]): iss for iss in needs_full}
+        for future in as_completed(futures):
+            iss = futures[future]
+            iss["fields"]["worklog"]["worklogs"] = future.result()
+            logger.info("  %s: %d worklogs fetched", iss["key"], len(future.result()))
+
+    logger.info("Full worklog fetch complete.")
 
     rows = _transform_worklogs(all_issues, start_date, end_date)
     return {"data": rows, "start": start_date, "end": end_date}
@@ -160,7 +173,7 @@ def _transform_worklogs(issues, start_date, end_date):
     records: dict[str, dict] = {}  # person -> {project: hours}
     sd = datetime.strptime(start_date, "%Y-%m-%d")
     ed = datetime.strptime(end_date, "%Y-%m-%d")
-    
+
     worklog_count = 0
 
     for issue in issues:
@@ -212,7 +225,6 @@ def _transform_worklogs(issues, start_date, end_date):
         total = sum(hours_map.values())
         gen_hours = hours_map.get("GEN", 0.0)
         proj_hours = total - gen_hours
-        email = hours_map.pop("_email", "")  # Remove _email before spreading
         rows.append({
             "name": person,
             "email": email,
@@ -224,7 +236,6 @@ def _transform_worklogs(issues, start_date, end_date):
             "general_pct": round(gen_hours / EXPECTED_HOURS, 4) if EXPECTED_HOURS else 0,
         })
 
-    # Sort by total hours (descending)
     rows.sort(key=lambda r: r["total"], reverse=True)
     logger.info("Returning %d employee records", len(rows))
     return rows
@@ -366,8 +377,6 @@ def load_team_roster():
 def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> list[dict]:
     roster = load_team_roster()
     expected = expected_override or roster.get("expected_hours", EXPECTED_HOURS)
-    roster = load_team_roster()
-    expected = expected_override or roster.get("expected_hours", EXPECTED_HOURS)
 
     # Build lookups by name AND email
     # JIRA display name → Excel roster name mapping
@@ -376,8 +385,8 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
     for jira_name, excel_name in NAME_MAP.items():
         jira_key = jira_name.lower().strip()
         if jira_key in worklog_by_name:
-            worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]    
-    worklog_by_name = {r["name"].lower().strip(): r for r in worklogs}
+            worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]
+    
     worklog_by_email = {}
     for r in worklogs:
         email = r.get("email", "").lower().strip()
@@ -478,13 +487,14 @@ def api_data():
     else:
         period_expected = EXPECTED_HOURS  # 168h for monthly   
 
-    # Dynamic expected hours based on period
-    if period in ("current_week", "previous_week"):
-        period_expected = 40   # 8h × 5 days
+    cache_key = f"{start_str}_{end_str}"    # ← OUTSIDE if/else
+    if cache_key in CACHE and (time.time() - CACHE[cache_key]["ts"]) < CACHE_TTL:
+        logger.info("Cache HIT for %s", cache_key)
+        result = CACHE[cache_key]["data"]
     else:
-        period_expected = EXPECTED_HOURS  # 168h for monthly
-
-    result = fetch_jira_worklogs(start_str, end_str)
+        logger.info("Cache MISS — fetching from JIRA...")
+        result = fetch_jira_worklogs(start_str, end_str)
+        CACHE[cache_key] = {"data": result, "ts": time.time()}
 
     # Merge with fixed 111-member roster
     if "data" in result:
