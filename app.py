@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 # JIRA display name → Excel roster name mapping
 NAME_MAP = {
     "Aditya Verma": "Aditya Kumar Verma",
-    "Pradeep C": "Pradeepa C",           # verify in Excel
-    "Rajashekar Murthy": "Raja Sekhar Murthy Elluru",  # verify in Excel
+    "Pradeep C": "Pradeepa C",
+    "Rajashekar Murthy": "Raja Sekhar Murthy Elluru",
     "J Leena": "Leena J",
     "R Swathi": "Swathi R",
     "Sachin B Biradarpatil": "Sachin B",
@@ -376,25 +376,7 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
     for jira_name, excel_name in NAME_MAP.items():
         jira_key = jira_name.lower().strip()
         if jira_key in worklog_by_name:
-            worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]
-    worklog_by_name = {r["name"].lower().strip(): r for r in worklogs} 
-    # Apply name mapping: add Excel name aliases for JIRA names
-    for jira_name, excel_name in NAME_MAP.items():
-        jira_name, excel_name in NAME_MAP.items():
-        jira_key = jira_name.lower().strip()
-        if jira_key in worklog_by_name:
-            worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]
-    NAME_MAP = {
-        "Aditya Verma": "Aditya Kumar Verma",
-        "Pradeep C": "Pradeepa C",
-        "Rajashekar Murthy": "Raja Sekhar Murthy Elluru",
-    # Add remaining after checking Excel:
-       "J Leena": "Leena J",
-       "R Swathi": "Swathi R",
-       "Sachin Biradarpatil": "Sachin ...",
-        "Vadiraj CG": "Vadiraj C G",
-}
-    
+            worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]    
     worklog_by_name = {r["name"].lower().strip(): r for r in worklogs}
     worklog_by_email = {}
     for r in worklogs:
