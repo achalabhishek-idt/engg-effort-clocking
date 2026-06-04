@@ -105,96 +105,51 @@ function renderBarChart() {
     const logged = dashboardData.filter(r => r.total > 0).sort((a, b) => b.total - a.total);
     const notLogged = dashboardData.filter(r => r.total === 0);
 
-    // ── Color helper ──
     const getColor = (pct) => {
-        if (pct >= 1.0)  return { bg: "#00875A", label: "≥100%" };
-        if (pct >= 0.75) return { bg: "#0052CC", label: "75-99%" };
-        if (pct >= 0.40) return { bg: "#FF991F", label: "40-74%" };
-        return              { bg: "#DE350B", label: "<40%" };
+        if (pct >= 1.0)  return "#00875A";
+        if (pct >= 0.75) return "#0052CC";
+        if (pct >= 0.40) return "#FF991F";
+        return "#DE350B";
     };
 
-    // ── Build HTML ──
     let html = "";
 
-    // ── SECTION 1: Heatmap Grid ──
-    html += `<div style="margin-bottom:24px;">
-        <h3 style="font-size:14px; color:#172B4D; margin:0 0 4px;">
-            📊 Team Utilization Overview
-        </h3>
-        <div style="font-size:11px; color:#6B778C; margin-bottom:10px; display:flex; gap:16px;">
-            <span>🟢 ≥100%</span> <span>🔵 75–99%</span> <span>🟡 40–74%</span> <span>🔴 <40%</span>
-            ${notLogged.length > 0 ? `<span>⬜ 0 hours</span>` : ""}
-        </div>
-        <div style="display:flex; flex-wrap:wrap; gap:4px;">`;
-
-    // Sort all by clocked_pct descending for heatmap
-    const allSorted = [...dashboardData].sort((a, b) => b.clocked_pct - a.clocked_pct);
-    allSorted.forEach(r => {
-        const pct = r.clocked_pct;
-        const color = r.total === 0 ? "#F4F5F7" : getColor(pct).bg;
-        const textColor = r.total === 0 ? "#7A869A" : "#fff";
-        const initials = r.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase();
-        const pctText = (pct * 100).toFixed(0);
-        html += `<div title="${r.name}\n${r.total.toFixed(1)}h / ${r.expected}h (${pctText}%)"
-            style="width:42px; height:42px; border-radius:6px; background:${color};
-            display:flex; align-items:center; justify-content:center;
-            font-size:10px; font-weight:700; color:${textColor};
-            cursor:pointer; transition:transform 0.15s; border:2px solid transparent;"
-            onmouseover="this.style.transform='scale(1.2)'; this.style.border='2px solid #172B4D'; this.style.zIndex=10;"
-            onmouseout="this.style.transform='scale(1)'; this.style.border='2px solid transparent'; this.style.zIndex=1;">
-            ${initials}
-        </div>`;
-    });
-
-    html += `</div></div>`;
-
-    // ── SECTION 2: Top 10 & Bottom 10 ──
+    // ── Top 10 & Bottom 10 side by side ──
     const top10 = logged.slice(0, 10);
     const bottom10 = logged.slice(-10).reverse();
+    const maxHours = top10[0]?.total || 168;
 
-    html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">`;
+    function renderMiniBar(list, title, titleColor, emoji) {
+        let s = `<div>
+            <h3 style="font-size:14px; color:${titleColor}; margin:0 0 12px; display:flex; align-items:center; gap:6px;">
+                ${emoji} ${title}
+            </h3>`;
+        list.forEach((r, i) => {
+            const pct = ((r.total / r.expected) * 100).toFixed(0);
+            const width = Math.max(3, (r.total / maxHours) * 100);
+            const color = getColor(r.clocked_pct);
+            s += `<div style="margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; color:#172B4D; margin-bottom:3px;">
+                    <span style="font-weight:500;">${i + 1}. ${r.name}</span>
+                    <span style="font-weight:700; color:${color};">${r.total.toFixed(1)}h · ${pct}%</span>
+                </div>
+                <div style="background:#F4F5F7; border-radius:4px; height:10px; overflow:hidden;">
+                    <div style="width:${width}%; height:100%; background:${color}; border-radius:4px; transition:width 0.5s;"></div>
+                </div>
+            </div>`;
+        });
+        s += `</div>`;
+        return s;
+    }
 
-    // Top 10
-    html += `<div>
-        <h3 style="font-size:14px; color:#00875A; margin:0 0 10px;">🔝 Top 10 Clockers</h3>`;
-    top10.forEach((r, i) => {
-        const pct = ((r.total / r.expected) * 100).toFixed(0);
-        const width = Math.min(100, (r.total / (top10[0]?.total || 1)) * 100);
-        const color = getColor(r.clocked_pct).bg;
-        html += `<div style="margin-bottom:6px;">
-            <div style="display:flex; justify-content:space-between; font-size:12px; color:#172B4D; margin-bottom:2px;">
-                <span>${i + 1}. ${r.name}</span>
-                <span style="font-weight:700;">${r.total.toFixed(1)}h (${pct}%)</span>
-            </div>
-            <div style="background:#F4F5F7; border-radius:4px; height:8px; overflow:hidden;">
-                <div style="width:${width}%; height:100%; background:${color}; border-radius:4px;"></div>
-            </div>
-        </div>`;
-    });
+    html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">`;
+    html += renderMiniBar(top10, "Top 10 Clockers", "#00875A", "🔝");
+    html += renderMiniBar(bottom10, "Bottom 10 Clockers", "#DE350B", "🔻");
     html += `</div>`;
 
-    // Bottom 10
-    html += `<div>
-        <h3 style="font-size:14px; color:#DE350B; margin:0 0 10px;">🔻 Bottom 10 Clockers</h3>`;
-    bottom10.forEach((r, i) => {
-        const pct = ((r.total / r.expected) * 100).toFixed(0);
-        const width = Math.max(3, (r.total / (top10[0]?.total || 1)) * 100);
-        const color = getColor(r.clocked_pct).bg;
-        html += `<div style="margin-bottom:6px;">
-            <div style="display:flex; justify-content:space-between; font-size:12px; color:#172B4D; margin-bottom:2px;">
-                <span>${i + 1}. ${r.name}</span>
-                <span style="font-weight:700;">${r.total.toFixed(1)}h (${pct}%)</span>
-            </div>
-            <div style="background:#F4F5F7; border-radius:4px; height:8px; overflow:hidden;">
-                <div style="width:${width}%; height:100%; background:${color}; border-radius:4px;"></div>
-            </div>
-        </div>`;
-    });
-    html += `</div></div>`;
-
-    // ── SECTION 3: Not Logged Summary ──
+    // ── Not Logged Summary ──
     if (notLogged.length > 0) {
-        html += `<details style="margin-top:16px; padding:12px; background:#FAFBFC; border:1px solid #DFE1E6; border-radius:8px;">
+        html += `<details style="margin-top:16px; padding:12px 16px; background:#FAFBFC; border:1px solid #DFE1E6; border-radius:8px;">
             <summary style="cursor:pointer; font-size:13px; color:#6B778C; font-weight:600;">
                 🔴 ${notLogged.length} team members with 0 hours logged
             </summary>
