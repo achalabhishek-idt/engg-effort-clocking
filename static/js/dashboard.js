@@ -100,163 +100,111 @@ function renderKPIs() {
 // ── Bar chart (scrollable, professional) ──
 function renderBarChart() {
     const container = document.getElementById("barChartContainer");
-    const canvas = document.getElementById("barChart");
-    const ctx = canvas.getContext("2d");
-    if (barChart) barChart.destroy();
+    if (barChart) { barChart.destroy(); barChart = null; }
 
-    // Split data into two groups
     const logged = dashboardData.filter(r => r.total > 0).sort((a, b) => b.total - a.total);
-    const notLogged = dashboardData.filter(r => r.total === 0).sort((a, b) => a.name.localeCompare(b.name));
-    const expected = logged.length > 0 ? logged[0].expected : 168;
+    const notLogged = dashboardData.filter(r => r.total === 0);
 
-    // If nobody logged, show a message
-    if (logged.length === 0) {
-        container.innerHTML = `
-            <div style="text-align:center; padding:40px; color:#6B778C;">
-                <h3>No worklogs recorded yet</h3>
-                <p>${notLogged.length} team members with 0 hours</p>
-            </div>`;
-        return;
-    }
-
-    // Dynamic height: 32px per person, minimum 400px
-    const chartHeight = logged.length * 38 + 60;  // tight fit: 38px per bar + padding
-    canvas.height = chartHeight;
-    canvas.style.height = chartHeight + "px";
-    canvas.style.width = "100%";
-    container.style.maxHeight = "600px";
-    container.style.overflowY = chartHeight > 600 ? "auto" : "hidden";
-
-    // Color based on percentage
-    const getColor = (total, exp) => {
-        const pct = total / exp;
-        if (pct >= 1.0)  return { bg: "rgba(0, 135, 90, 0.85)",  border: "#00875A" };
-        if (pct >= 0.75) return { bg: "rgba(0, 82, 204, 0.85)",  border: "#0052CC" };
-        if (pct > 0)     return { bg: "rgba(255, 153, 31, 0.85)", border: "#FF991F" };
-        return              { bg: "rgba(222, 53, 11, 0.7)",  border: "#DE350B" };
+    // ── Color helper ──
+    const getColor = (pct) => {
+        if (pct >= 1.0)  return { bg: "#00875A", label: "≥100%" };
+        if (pct >= 0.75) return { bg: "#0052CC", label: "75-99%" };
+        if (pct >= 0.40) return { bg: "#FF991F", label: "40-74%" };
+        return              { bg: "#DE350B", label: "<40%" };
     };
 
-    const bgColors = logged.map(r => getColor(r.total, r.expected).bg);
-    const borderColors = logged.map(r => getColor(r.total, r.expected).border);
+    // ── Build HTML ──
+    let html = "";
 
-    barChart = new Chart(ctx, {
-        type: "bar",
-        data: {
-            labels: logged.map(r => r.name),
-            datasets: [
-                {
-                    label: "Clocked Hours",
-                    data: logged.map(r => +r.total.toFixed(1)),
-                    backgroundColor: bgColors,
-                    borderColor: borderColors,
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    barPercentage: 0.7,
-                    categoryPercentage: 0.85,
-                },
-                {
-                    label: `Expected (${expected}h)`,
-                    data: logged.map(() => expected),
-                    backgroundColor: "rgba(0,0,0,0)",
-                    borderColor: "rgba(101, 84, 192, 0.4)",
-                    borderWidth: 2,
-                    borderDash: [6, 3],
-                    borderRadius: 2,
-                    barPercentage: 0.85,
-                    categoryPercentage: 0.85,
-                    borderSkipped: false,
-                },
-            ],
-        },
-        options: {
-            indexAxis: "y",
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: 500 },
-            layout: { padding: { right: 50 } },
-            plugins: {
-                legend: {
-                    position: "top",
-                    labels: {
-                        font: { size: 12, family: "'Segoe UI', sans-serif" },
-                        usePointStyle: true,
-                        pointStyle: "rectRounded",
-                        padding: 20,
-                    },
-                },
-                tooltip: {
-                    backgroundColor: "#172B4D",
-                    titleFont: { size: 13, weight: "bold" },
-                    bodyFont: { size: 12 },
-                    padding: 14,
-                    cornerRadius: 8,
-                    callbacks: {
-                        title: ctx => logged[ctx[0].dataIndex].name,
-                        label: ctx => {
-                            const row = logged[ctx.dataIndex];
-                            if (ctx.dataset.label.startsWith("Expected")) {
-                                return ` Expected: ${row.expected}h`;
-                            }
-                            const pct = ((row.total / row.expected) * 100).toFixed(0);
-                            const icon = pct >= 100 ? "✅" : pct >= 75 ? "🔵" : "⚠️";
-                            return ` Clocked: ${row.total.toFixed(1)}h / ${row.expected}h (${pct}%) ${icon}`;
-                        },
-                    },
-                },
-            },
-            scales: {
-                x: {
-                    beginAtZero: true,
-                    grid: { color: "rgba(0,0,0,0.05)" },
-                    ticks: { callback: v => v + "h", font: { size: 11 } },
-                    title: { display: true, text: "Hours", font: { size: 13, weight: "bold" } },
-                },
-                y: {
-                    grid: { display: false },
-                    ticks: { font: { size: 11, family: "'Segoe UI', sans-serif" }, padding: 8 },
-                },
-            },
-        },
-        plugins: [{
-            id: "barLabels",
-            afterDatasetsDraw(chart) {
-                const meta = chart.getDatasetMeta(0);
-                const ctx = chart.ctx;
-                ctx.save();
-                ctx.font = "bold 10px 'Segoe UI', sans-serif";
-                ctx.textAlign = "left";
-                ctx.textBaseline = "middle";
-                meta.data.forEach((bar, i) => {
-                    const row = logged[i];
-                    const pct = ((row.total / row.expected) * 100).toFixed(0);
-                    ctx.fillStyle = pct >= 100 ? "#00875A" : pct >= 75 ? "#0052CC" : "#FF991F";
-                    ctx.fillText(`${pct}%`, bar.x + 6, bar.y);
-                });
-                ctx.restore();
-            },
-        }],
+    // ── SECTION 1: Heatmap Grid ──
+    html += `<div style="margin-bottom:24px;">
+        <h3 style="font-size:14px; color:#172B4D; margin:0 0 4px;">
+            📊 Team Utilization Overview
+        </h3>
+        <div style="font-size:11px; color:#6B778C; margin-bottom:10px; display:flex; gap:16px;">
+            <span>🟢 ≥100%</span> <span>🔵 75–99%</span> <span>🟡 40–74%</span> <span>🔴 <40%</span>
+            ${notLogged.length > 0 ? `<span>⬜ 0 hours</span>` : ""}
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px;">`;
+
+    // Sort all by clocked_pct descending for heatmap
+    const allSorted = [...dashboardData].sort((a, b) => b.clocked_pct - a.clocked_pct);
+    allSorted.forEach(r => {
+        const pct = r.clocked_pct;
+        const color = r.total === 0 ? "#F4F5F7" : getColor(pct).bg;
+        const textColor = r.total === 0 ? "#7A869A" : "#fff";
+        const initials = r.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase();
+        const pctText = (pct * 100).toFixed(0);
+        html += `<div title="${r.name}\n${r.total.toFixed(1)}h / ${r.expected}h (${pctText}%)"
+            style="width:42px; height:42px; border-radius:6px; background:${color};
+            display:flex; align-items:center; justify-content:center;
+            font-size:10px; font-weight:700; color:${textColor};
+            cursor:pointer; transition:transform 0.15s; border:2px solid transparent;"
+            onmouseover="this.style.transform='scale(1.2)'; this.style.border='2px solid #172B4D'; this.style.zIndex=10;"
+            onmouseout="this.style.transform='scale(1)'; this.style.border='2px solid transparent'; this.style.zIndex=1;">
+            ${initials}
+        </div>`;
     });
 
-    // Add "Not Logged" summary below the chart
-    const existingSummary = document.getElementById("notLoggedSummary");
-    if (existingSummary) existingSummary.remove();
+    html += `</div></div>`;
 
+    // ── SECTION 2: Top 10 & Bottom 10 ──
+    const top10 = logged.slice(0, 10);
+    const bottom10 = logged.slice(-10).reverse();
+
+    html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">`;
+
+    // Top 10
+    html += `<div>
+        <h3 style="font-size:14px; color:#00875A; margin:0 0 10px;">🔝 Top 10 Clockers</h3>`;
+    top10.forEach((r, i) => {
+        const pct = ((r.total / r.expected) * 100).toFixed(0);
+        const width = Math.min(100, (r.total / (top10[0]?.total || 1)) * 100);
+        const color = getColor(r.clocked_pct).bg;
+        html += `<div style="margin-bottom:6px;">
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:#172B4D; margin-bottom:2px;">
+                <span>${i + 1}. ${r.name}</span>
+                <span style="font-weight:700;">${r.total.toFixed(1)}h (${pct}%)</span>
+            </div>
+            <div style="background:#F4F5F7; border-radius:4px; height:8px; overflow:hidden;">
+                <div style="width:${width}%; height:100%; background:${color}; border-radius:4px;"></div>
+            </div>
+        </div>`;
+    });
+    html += `</div>`;
+
+    // Bottom 10
+    html += `<div>
+        <h3 style="font-size:14px; color:#DE350B; margin:0 0 10px;">🔻 Bottom 10 Clockers</h3>`;
+    bottom10.forEach((r, i) => {
+        const pct = ((r.total / r.expected) * 100).toFixed(0);
+        const width = Math.max(3, (r.total / (top10[0]?.total || 1)) * 100);
+        const color = getColor(r.clocked_pct).bg;
+        html += `<div style="margin-bottom:6px;">
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:#172B4D; margin-bottom:2px;">
+                <span>${i + 1}. ${r.name}</span>
+                <span style="font-weight:700;">${r.total.toFixed(1)}h (${pct}%)</span>
+            </div>
+            <div style="background:#F4F5F7; border-radius:4px; height:8px; overflow:hidden;">
+                <div style="width:${width}%; height:100%; background:${color}; border-radius:4px;"></div>
+            </div>
+        </div>`;
+    });
+    html += `</div></div>`;
+
+    // ── SECTION 3: Not Logged Summary ──
     if (notLogged.length > 0) {
-        const summary = document.createElement("div");
-        summary.id = "notLoggedSummary";
-        summary.style.cssText = "padding:12px 16px; background:#FAFBFC; border-top:1px solid #DFE1E6; margin-top:8px; border-radius:0 0 8px 8px;";
-        summary.innerHTML = `
-            <details>
-                <summary style="cursor:pointer; font-size:13px; color:#6B778C; font-weight:600;">
-                    🔴 ${notLogged.length} team members with 0 hours logged
-                </summary>
-                <div style="margin-top:8px; font-size:12px; color:#7A869A; columns:3; column-gap:20px;">
-                    ${notLogged.map(r => `<div style="padding:2px 0;">${r.name}</div>`).join("")}
-                </div>
-            </details>
-        `;
-        container.parentElement.appendChild(summary);
+        html += `<details style="margin-top:16px; padding:12px; background:#FAFBFC; border:1px solid #DFE1E6; border-radius:8px;">
+            <summary style="cursor:pointer; font-size:13px; color:#6B778C; font-weight:600;">
+                🔴 ${notLogged.length} team members with 0 hours logged
+            </summary>
+            <div style="margin-top:8px; font-size:12px; color:#7A869A; columns:3; column-gap:20px;">
+                ${notLogged.sort((a,b) => a.name.localeCompare(b.name)).map(r => `<div style="padding:2px 0;">${r.name}</div>`).join("")}
+            </div>
+        </details>`;
     }
+
+    container.innerHTML = html;
 }
 
 // ── Donut chart (distribution buckets) ─────────────────────────
