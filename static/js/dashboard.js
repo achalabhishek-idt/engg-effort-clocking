@@ -114,7 +114,7 @@ function renderBarChart() {
 
     let html = "";
 
-    // ── Top 10 & Bottom 10 side by side ──
+    // ── SECTION 2: Top 10 & Bottom 10 ──
     const top10 = logged.slice(0, 10);
     const bottom10 = logged.slice(-10).reverse();
     const maxHours = top10[0]?.total || 168;
@@ -142,12 +142,12 @@ function renderBarChart() {
         return s;
     }
 
-    html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">`;
+    html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px;">`;
     html += renderMiniBar(top10, "Top 10 Clockers", "#00875A", "🔝");
     html += renderMiniBar(bottom10, "Bottom 10 Clockers", "#DE350B", "🔻");
     html += `</div>`;
 
-    // ── Not Logged Summary ──
+    // ── SECTION 4: Not Logged Summary ──
     if (notLogged.length > 0) {
         html += `<details style="margin-top:16px; padding:12px 16px; background:#FAFBFC; border:1px solid #DFE1E6; border-radius:8px;">
             <summary style="cursor:pointer; font-size:13px; color:#6B778C; font-weight:600;">
