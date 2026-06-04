@@ -96,51 +96,54 @@ function renderKPIs() {
 
 // ── Bar chart (scrollable, professional) ──
 function renderBarChart() {
-    const container = document.getElementById("barChart").parentElement;
-    
-    // Sort by total hours descending
-    const sorted = [...dashboardData].sort((a, b) => b.total - a.total);
-    const labels = sorted.map(r => r.name);
-    const expected = sorted.length > 0 ? sorted[0].expected : 168;
-
-    // Dynamic height: 28px per person, minimum 500px
-    const chartHeight = Math.max(500, sorted.length * 28);
-
-    // Make container scrollable
-    container.style.overflowY = "auto";
-    container.style.overflowX = "hidden";
-    container.style.maxHeight = "600px";
-    container.style.position = "relative";
-
-    // Resize canvas
+    const container = document.getElementById("barChartContainer");
     const canvas = document.getElementById("barChart");
-    canvas.style.height = chartHeight + "px";
-    canvas.style.minHeight = chartHeight + "px";
-    canvas.style.width = "100%";
-
     const ctx = canvas.getContext("2d");
     if (barChart) barChart.destroy();
 
+    // Split data into two groups
+    const logged = dashboardData.filter(r => r.total > 0).sort((a, b) => b.total - a.total);
+    const notLogged = dashboardData.filter(r => r.total === 0).sort((a, b) => a.name.localeCompare(b.name));
+    const expected = logged.length > 0 ? logged[0].expected : 168;
+
+    // If nobody logged, show a message
+    if (logged.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center; padding:40px; color:#6B778C;">
+                <h3>No worklogs recorded yet</h3>
+                <p>${notLogged.length} team members with 0 hours</p>
+            </div>`;
+        return;
+    }
+
+    // Dynamic height: 32px per person, minimum 400px
+    const chartHeight = Math.max(400, logged.length * 32);
+    canvas.style.height = chartHeight + "px";
+    canvas.style.minHeight = chartHeight + "px";
+    canvas.style.width = "100%";
+    container.style.maxHeight = "600px";
+    container.style.overflowY = "auto";
+
     // Color based on percentage
-    const getColor = (total, expected) => {
-        const pct = total / expected;
-        if (pct >= 1.0) return { bg: "rgba(0, 135, 90, 0.8)",  border: "#00875A" };  // Green
-        if (pct >= 0.75) return { bg: "rgba(0, 82, 204, 0.8)",  border: "#0052CC" };  // Blue
-        if (pct > 0)     return { bg: "rgba(255, 153, 31, 0.8)", border: "#FF991F" };  // Orange
-        return              { bg: "rgba(222, 53, 11, 0.7)",  border: "#DE350B" };      // Red
+    const getColor = (total, exp) => {
+        const pct = total / exp;
+        if (pct >= 1.0)  return { bg: "rgba(0, 135, 90, 0.85)",  border: "#00875A" };
+        if (pct >= 0.75) return { bg: "rgba(0, 82, 204, 0.85)",  border: "#0052CC" };
+        if (pct > 0)     return { bg: "rgba(255, 153, 31, 0.85)", border: "#FF991F" };
+        return              { bg: "rgba(222, 53, 11, 0.7)",  border: "#DE350B" };
     };
 
-    const bgColors = sorted.map(r => getColor(r.total, r.expected).bg);
-    const borderColors = sorted.map(r => getColor(r.total, r.expected).border);
+    const bgColors = logged.map(r => getColor(r.total, r.expected).bg);
+    const borderColors = logged.map(r => getColor(r.total, r.expected).border);
 
     barChart = new Chart(ctx, {
         type: "bar",
         data: {
-            labels,
+            labels: logged.map(r => r.name),
             datasets: [
                 {
                     label: "Clocked Hours",
-                    data: sorted.map(r => +r.total.toFixed(1)),
+                    data: logged.map(r => +r.total.toFixed(1)),
                     backgroundColor: bgColors,
                     borderColor: borderColors,
                     borderWidth: 1,
@@ -150,9 +153,9 @@ function renderBarChart() {
                 },
                 {
                     label: `Expected (${expected}h)`,
-                    data: sorted.map(() => expected),
+                    data: logged.map(() => expected),
                     backgroundColor: "rgba(0,0,0,0)",
-                    borderColor: "rgba(101, 84, 192, 0.5)",
+                    borderColor: "rgba(101, 84, 192, 0.4)",
                     borderWidth: 2,
                     borderDash: [6, 3],
                     borderRadius: 2,
@@ -163,13 +166,11 @@ function renderBarChart() {
             ],
         },
         options: {
-            indexAxis: "y",       // ← HORIZONTAL bars
+            indexAxis: "y",
             responsive: false,
             maintainAspectRatio: false,
             animation: { duration: 500 },
-            layout: {
-                padding: { right: 40 }
-            },
+            layout: { padding: { right: 50 } },
             plugins: {
                 legend: {
                     position: "top",
@@ -186,85 +187,73 @@ function renderBarChart() {
                     bodyFont: { size: 12 },
                     padding: 14,
                     cornerRadius: 8,
-                    displayColors: true,
                     callbacks: {
-                        title: ctx => sorted[ctx[0].dataIndex].name,
+                        title: ctx => logged[ctx[0].dataIndex].name,
                         label: ctx => {
-                            const row = sorted[ctx.dataIndex];
+                            const row = logged[ctx.dataIndex];
                             if (ctx.dataset.label.startsWith("Expected")) {
                                 return ` Expected: ${row.expected}h`;
                             }
                             const pct = ((row.total / row.expected) * 100).toFixed(0);
-                            const status = pct >= 100 ? "✅" : pct >= 75 ? "🔵" : pct > 0 ? "⚠️" : "🔴";
-                            return ` Clocked: ${row.total.toFixed(1)}h / ${row.expected}h (${pct}%) ${status}`;
-                        },
-                        afterBody: ctx => {
-                            const row = sorted[ctx[0].dataIndex];
-                            const projects = Object.entries(row)
-                                .filter(([k, v]) => typeof v === "number" && v > 0 &&
-                                    !["total","expected","clocked_pct","proj_pct","general_pct"].includes(k))
-                                .sort((a, b) => b[1] - a[1])
-                                .map(([k, v]) => `   ${k}: ${v.toFixed(1)}h`)
-                                .slice(0, 5);
-                            return projects.length ? ["\n Projects:", ...projects] : [];
+                            const icon = pct >= 100 ? "✅" : pct >= 75 ? "🔵" : "⚠️";
+                            return ` Clocked: ${row.total.toFixed(1)}h / ${row.expected}h (${pct}%) ${icon}`;
                         },
                     },
                 },
-                // Percentage labels at end of bars
-                datalabels: false,
             },
             scales: {
                 x: {
                     beginAtZero: true,
                     grid: { color: "rgba(0,0,0,0.05)" },
-                    ticks: {
-                        callback: v => v + "h",
-                        font: { size: 11 },
-                    },
-                    title: {
-                        display: true,
-                        text: "Hours",
-                        font: { size: 13, weight: "bold" },
-                    },
+                    ticks: { callback: v => v + "h", font: { size: 11 } },
+                    title: { display: true, text: "Hours", font: { size: 13, weight: "bold" } },
                 },
                 y: {
                     grid: { display: false },
-                    ticks: {
-                        font: { size: 11, family: "'Segoe UI', sans-serif" },
-                        mirror: false,
-                        padding: 8,
-                    },
+                    ticks: { font: { size: 11, family: "'Segoe UI', sans-serif" }, padding: 8 },
                 },
             },
         },
-        // Custom plugin: draw percentage at the end of each bar
         plugins: [{
             id: "barLabels",
             afterDatasetsDraw(chart) {
-                const dataset = chart.data.datasets[0];
                 const meta = chart.getDatasetMeta(0);
                 const ctx = chart.ctx;
-
                 ctx.save();
                 ctx.font = "bold 10px 'Segoe UI', sans-serif";
                 ctx.textAlign = "left";
                 ctx.textBaseline = "middle";
-
                 meta.data.forEach((bar, i) => {
-                    const row = sorted[i];
+                    const row = logged[i];
                     const pct = ((row.total / row.expected) * 100).toFixed(0);
-                    const x = bar.x + 6;
-                    const y = bar.y;
-
-                    ctx.fillStyle = pct >= 100 ? "#00875A" :
-                                    pct >= 75  ? "#0052CC" :
-                                    pct > 0    ? "#FF991F" : "#DE350B";
-                    ctx.fillText(`${pct}%`, x, y);
+                    ctx.fillStyle = pct >= 100 ? "#00875A" : pct >= 75 ? "#0052CC" : "#FF991F";
+                    ctx.fillText(`${pct}%`, bar.x + 6, bar.y);
                 });
                 ctx.restore();
             },
         }],
     });
+
+    // Add "Not Logged" summary below the chart
+    const existingSummary = document.getElementById("notLoggedSummary");
+    if (existingSummary) existingSummary.remove();
+
+    if (notLogged.length > 0) {
+        const summary = document.createElement("div");
+        summary.id = "notLoggedSummary";
+        summary.style.cssText = "padding:12px 16px; background:#FAFBFC; border-top:1px solid #DFE1E6; margin-top:8px; border-radius:0 0 8px 8px;";
+        summary.innerHTML = `
+            <details>
+                <summary style="cursor:pointer; font-size:13px; color:#6B778C; font-weight:600;">
+                    🔴 ${notLogged.length} team members with 0 hours logged
+                </summary>
+                <div style="margin-top:8px; font-size:12px; color:#7A869A; columns:3; column-gap:20px;">
+                    ${notLogged.map(r => `<div style="padding:2px 0;">${r.name}</div>`).join("")}
+                </div>
+            </details>
+        `;
+        container.parentElement.appendChild(summary);
+    }
 }
 
 // ── Donut chart (distribution buckets) ─────────────────────────
