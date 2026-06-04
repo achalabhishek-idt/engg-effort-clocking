@@ -19,7 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setupExport();
     setupInsights();
     setupTableSort();
-    loadPeriod("previous_month");
+    loadPeriod("current_week");
 });
 
 // ── Tab navigation ─────────────────────────────────────────────

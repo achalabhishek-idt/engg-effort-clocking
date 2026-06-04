@@ -386,7 +386,6 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
         jira_key = jira_name.lower().strip()
         if jira_key in worklog_by_name:
             worklog_by_name[excel_name.lower().strip()] = worklog_by_name[jira_key]
-    
     worklog_by_email = {}
     for r in worklogs:
         email = r.get("email", "").lower().strip()
@@ -422,11 +421,10 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
                 **{col: 0 for col in PROJECT_COLUMNS},
             })
 
+    # Skip JIRA users not in roster (they're from other teams)
     for r in worklogs:
         if r["name"].lower().strip() not in matched_keys:
-            r["in_roster"] = False
-            r["email"] = r.get("email", "")
-            merged.append(r)
+            logger.info("  SKIPPING (not in roster): %s", r["name"])
 
     merged.sort(key=lambda r: (not r.get("in_roster", True), -r.get("total", 0)))
     logger.info("Roster merge: %d roster, %d matched, %d not in roster",
