@@ -9,6 +9,7 @@ let barChart = null;
 let donutChart = null;
 let sortCol = "clocked_pct";
 let sortAsc = false;
+let currentPeriod = "current_week";
 
 // ── Init ───────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -34,6 +35,7 @@ function setupTabs() {
                 document.getElementById("uploadPanel").classList.remove("hidden");
             } else {
                 document.getElementById("uploadPanel").classList.add("hidden");
+                currentPeriod = period;
                 loadPeriod(period);
             }
         });
@@ -84,18 +86,74 @@ function renderAll() {
 function renderKPIs() {
     const d = dashboardData;
     const n = d.length;
-    const avgC = d.reduce((s, r) => s + r.clocked_pct, 0) / n;
+    
+    // Calculate total clocked hours and total expected hours
+    const totalClockedHours = d.reduce((s, r) => s + (r.total || 0), 0);
+    const totalExpectedHours = d.reduce((s, r) => s + (r.expected || 168), 0);
+    const totalClockedPct = totalExpectedHours > 0 ? totalClockedHours / totalExpectedHours : 0;
+    
     const avgP = d.reduce((s, r) => s + r.proj_pct, 0) / n;
-    const avgG = d.reduce((s, r) => s + r.general_pct, 0) / n;
+    const zeroHours = d.filter(r => r.total === 0 || r.total === 0.0).length;
     const healthy = d.filter(r => r.clocked_pct > 1.20).length;
     const low = d.filter(r => r.clocked_pct < 0.80).length;
 
     document.getElementById("kpiTeamSize").textContent = n;
-    document.getElementById("kpiClocked").textContent = pct(avgC);
+    document.getElementById("kpiClocked").textContent = pct(totalClockedPct);
     document.getElementById("kpiProj").textContent = pct(avgP);
-    document.getElementById("kpiGeneral").textContent = pct(avgG);
+    document.getElementById("kpiGeneral").textContent = zeroHours;
     document.getElementById("kpiHealthy").textContent = healthy;
     document.getElementById("kpiLow").textContent = low;
+    
+    // Show expected hours message for current month
+    updateExpectedHoursMessage();
+}
+
+function calculateWorkingDays(year, month) {
+    // month is 0-indexed (0 = January, 11 = December)
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    let workingDays = 0;
+    
+    for (let day = new Date(firstDay); day <= lastDay; day.setDate(day.getDate() + 1)) {
+        const dayOfWeek = day.getDay();
+        // Monday = 1, Friday = 5 (Sunday = 0, Saturday = 6)
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+            workingDays++;
+        }
+    }
+    
+    return workingDays;
+}
+
+function updateExpectedHoursMessage() {
+    const msgDiv = document.getElementById("expectedHoursMsg");
+    
+    if (currentPeriod === "current_month" || currentPeriod === "previous_month") {
+        const now = new Date();
+        let year = now.getFullYear();
+        let month = now.getMonth(); // 0-indexed
+        
+        // For previous month, adjust the month/year
+        if (currentPeriod === "previous_month") {
+            month -= 1;
+            if (month < 0) {
+                month = 11;
+                year -= 1;
+            }
+        }
+        
+        const workingDays = calculateWorkingDays(year, month);
+        const expectedHours = workingDays * 8;
+        
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+                           "July", "August", "September", "October", "November", "December"];
+        const monthYear = `${monthNames[month]} ${year}`;
+        
+        msgDiv.textContent = `Expected Clocking for month of ${monthYear} is ${expectedHours} hrs`;
+        msgDiv.style.display = "block";
+    } else {
+        msgDiv.style.display = "none";
+    }
 }
 
 
