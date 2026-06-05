@@ -414,6 +414,13 @@ tbody td {
     white-space: nowrap;
 }
 tbody tr:hover { background: #fafbfc; }
+tbody tr.employee-row:hover {
+    background: var(--blue-light);
+    transition: background .2s;
+}
+tbody tr.employee-row:active {
+    background: #b3d4ff;
+}
 
 /* Percentage badges */
 .badge {

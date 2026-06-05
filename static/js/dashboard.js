@@ -227,8 +227,11 @@ function renderProjects() {
     const container = document.getElementById("projectsContainer");
     const projectList = [
         "DMS", "BMS", "IDT", "GEN", "PLT", "ITO", "HU",
-        "DAT", "PAS", "PEM", "Customer Projs", "Platform Projs", "HA", "PEMV2"
+        "DAT", "PAS", "PEM", "Customer Projs", "Platform Projs", "HA", "PEMV2", "ED"
     ];
+    const projectLabels = {
+        ED: "Engineering DevOps (ED)"
+    };
 
     // Build project -> employees map
     const projectMap = {};
@@ -251,10 +254,11 @@ function renderProjects() {
     projectList.forEach(proj => {
         const employees = projectMap[proj].sort((a, b) => parseFloat(b.hours) - parseFloat(a.hours));
         if (employees.length === 0) return; // Skip empty projects
+        const projectLabel = projectLabels[proj] || proj;
 
         html += `<div class="project-item" data-project="${proj}" style="cursor: pointer;">
             <div class="project-name">
-                <span>${proj}</span>
+                <span>${projectLabel}</span>
                 <span class="project-count">${employees.length}</span>
             </div>
             <div class="project-employees">`;
@@ -432,7 +436,7 @@ function renderTable() {
     });
 
     tbody.innerHTML = rows.map(r => `
-        <tr>
+        <tr class="employee-row" data-employee-name="${escHtml(r.name)}" style="cursor: pointer;">
             <td><strong>${escHtml(r.name)}</strong></td>
             <td>${r.total.toFixed(1)}</td>
             <td>${r.expected}</td>
@@ -441,6 +445,17 @@ function renderTable() {
             <td>${badge(r.general_pct, "amber")}</td>
         </tr>
     `).join("");
+
+    // Attach click handlers to employee rows
+    document.querySelectorAll(".employee-row").forEach(row => {
+        row.addEventListener("click", () => {
+            const empName = row.dataset.employeeName;
+            const empData = dashboardData.find(d => d.name === empName);
+            if (empData) {
+                showEmployeeDrilldown(empData);
+            }
+        });
+    });
 }
 
 function setupTableSort() {
