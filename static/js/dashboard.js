@@ -119,7 +119,7 @@ function renderBarChart() {
     const bottom10 = logged.slice(-10).reverse();
     const maxHours = top10[0]?.total || 168;
 
-    function renderMiniBar(list, title, titleColor, emoji) {
+    function renderMiniBar(list, title, titleColor, emoji, extraHtml = "") {
         let s = `<div>
             <h3 style="font-size:14px; color:${titleColor}; margin:0 0 12px; display:flex; align-items:center; gap:6px;">
                 ${emoji} ${title}
@@ -138,12 +138,22 @@ function renderBarChart() {
                 </div>
             </div>`;
         });
+        s += extraHtml;
         s += `</div>`;
         return s;
     }
 
+    const legendHtml = `
+        <div class="chart-legend-strip" style="margin-top: 12px;">
+            <span class="legend-item"><span class="dot green"></span> ≥100%</span>
+            <span class="legend-item"><span class="dot blue"></span> 75-99%</span>
+            <span class="legend-item"><span class="dot orange"></span> 1-74%</span>
+            <span class="legend-item"><span class="dot red"></span> 0%</span>
+        </div>
+    `;
+
     html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px;">`;
-    html += renderMiniBar(top10, "Top 10 Clockers", "#00875A", "🔝");
+    html += renderMiniBar(top10, "Top 10 Clockers", "#00875A", "🔝", legendHtml);
     html += renderMiniBar(bottom10, "Bottom 10 Clockers", "#DE350B", "🔻");
     html += `</div>`;
 
