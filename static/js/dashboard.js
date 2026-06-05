@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setupExport();
     setupInsights();
     setupTableSort();
+    setupModal();
     loadPeriod("current_week");
 });
 
@@ -132,7 +133,7 @@ function renderBarChart() {
             const color = getColor(r.clocked_pct);
             s += `<div style="margin-bottom:8px;">
                 <div style="display:flex; justify-content:space-between; font-size:12px; color:#172B4D; margin-bottom:3px;">
-                    <span style="font-weight:500;">${i + 1}. ${r.name}</span>
+                    <span class="employee-name-link" data-employee-name="${escHtml(r.name)}" style="font-weight:500; cursor:pointer; color:#0052CC; text-decoration:none;">${i + 1}. ${r.name}</span>
                     <span style="font-weight:700; color:${color};">${r.total.toFixed(1)}h · ${pct}%</span>
                 </div>
                 <div style="background:#F4F5F7; border-radius:4px; height:10px; overflow:hidden;">
@@ -173,6 +174,18 @@ function renderBarChart() {
     }
 
     container.innerHTML = html;
+    
+    // Attach click handlers to employee names
+    document.querySelectorAll(".employee-name-link").forEach(link => {
+        link.addEventListener("click", (e) => {
+            e.preventDefault();
+            const empName = link.dataset.employeeName;
+            const empData = dashboardData.find(d => d.name === empName);
+            if (empData) {
+                showEmployeeDrilldown(empData);
+            }
+        });
+    });
 }
 
 // ── Donut chart (distribution buckets) ─────────────────────────
@@ -239,7 +252,7 @@ function renderProjects() {
         const employees = projectMap[proj].sort((a, b) => parseFloat(b.hours) - parseFloat(a.hours));
         if (employees.length === 0) return; // Skip empty projects
 
-        html += `<div class="project-item">
+        html += `<div class="project-item" data-project="${proj}" style="cursor: pointer;">
             <div class="project-name">
                 <span>${proj}</span>
                 <span class="project-count">${employees.length}</span>
@@ -257,7 +270,147 @@ function renderProjects() {
     });
 
     container.innerHTML = html;
+    
+    // Attach click handlers to project items
+    document.querySelectorAll(".project-item").forEach(item => {
+        item.addEventListener("click", () => {
+            const project = item.dataset.project;
+            showProjectDrilldown(project, projectMap[project]);
+        });
+    });
 }
+
+// ── Project drill-down modal ──────────────────────────────────
+function showProjectDrilldown(projectName, employees) {
+    const modal = document.getElementById("drilldownModal");
+    const title = document.getElementById("drilldownTitle");
+    const body = document.getElementById("drilldownBody");
+    
+    title.textContent = `📊 ${projectName} — Employee Details`;
+    
+    const totalHours = employees.reduce((sum, emp) => sum + parseFloat(emp.hours), 0);
+    const avgHours = (totalHours / employees.length).toFixed(1);
+    
+    let html = `
+        <div class="drilldown-stat">
+            <span class="drilldown-stat-label">Total Employees</span>
+            <span class="drilldown-stat-value">${employees.length}</span>
+        </div>
+        <div class="drilldown-stat">
+            <span class="drilldown-stat-label">Total Hours</span>
+            <span class="drilldown-stat-value">${totalHours.toFixed(1)}h</span>
+        </div>
+        <div class="drilldown-stat">
+            <span class="drilldown-stat-label">Average Hours</span>
+            <span class="drilldown-stat-value">${avgHours}h</span>
+        </div>
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 2px solid var(--border);">
+            <h3 style="font-size: 13px; font-weight: 600; margin: 0 0 12px; color: var(--text);">Employees</h3>
+    `;
+    
+    employees.sort((a, b) => parseFloat(b.hours) - parseFloat(a.hours)).forEach((emp, idx) => {
+        html += `<div style="padding: 8px; background: ${idx % 2 === 0 ? '#f8f9fa' : '#fff'}; margin-bottom: 4px; border-radius: 4px; display: flex; justify-content: space-between;">
+            <span style="font-weight: 500;">${escHtml(emp.name)}</span>
+            <span style="color: var(--text-secondary); font-size: 12px;">${emp.hours}h</span>
+        </div>`;
+    });
+    
+    html += `</div>`;
+    
+    body.innerHTML = html;
+    modal.classList.remove("hidden");
+}
+
+// ── Employee drill-down modal ─────────────────────────────────
+function showEmployeeDrilldown(employee) {
+    const modal = document.getElementById("drilldownModal");
+    const title = document.getElementById("drilldownTitle");
+    const body = document.getElementById("drilldownBody");
+
+    title.textContent = `👤 ${employee.name} — Worklog Breakdown`;
+
+    const projectBreakdown = Object.entries(employee)
+        .filter(([key, value]) => !["name", "email", "total", "expected", "clocked_pct", "proj_pct", "general_pct"].includes(key) && typeof value === "number" && value > 0)
+        .map(([project, hours]) => ({ project, hours }))
+        .sort((a, b) => b.hours - a.hours);
+
+    const worklogs = Array.isArray(employee.worklogs) ? [...employee.worklogs] : [];
+    worklogs.sort((a, b) => {
+        const dateCompare = String(b.date || "").localeCompare(String(a.date || ""));
+        if (dateCompare !== 0) return dateCompare;
+        return String(b.issue || "").localeCompare(String(a.issue || ""));
+    });
+
+    const totalProjects = projectBreakdown.length;
+    const totalHours = employee.total || 0;
+
+    let html = `
+        <div class="drilldown-stat">
+            <span class="drilldown-stat-label">Total Hours</span>
+            <span class="drilldown-stat-value">${totalHours.toFixed(1)}h</span>
+        </div>
+        <div class="drilldown-stat">
+            <span class="drilldown-stat-label">Projects Logged</span>
+            <span class="drilldown-stat-value">${totalProjects}</span>
+        </div>
+        <div class="drilldown-stat">
+            <span class="drilldown-stat-label">Clocked %</span>
+            <span class="drilldown-stat-value">${pct(employee.clocked_pct || 0)}</span>
+        </div>
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 2px solid var(--border);">
+            <h3 style="font-size: 13px; font-weight: 600; margin: 0 0 12px; color: var(--text);">Projects</h3>
+    `;
+
+    if (projectBreakdown.length === 0) {
+        html += `<p style="color: var(--text-secondary); font-size: 13px;">No project worklogs found for this employee.</p>`;
+    } else {
+        projectBreakdown.forEach((item, idx) => {
+            html += `<div style="padding: 8px; background: ${idx % 2 === 0 ? '#f8f9fa' : '#fff'}; margin-bottom: 4px; border-radius: 4px; display: flex; justify-content: space-between;">
+                <span style="font-weight: 500;">${escHtml(item.project)}</span>
+                <span style="color: var(--text-secondary); font-size: 12px;">${item.hours.toFixed(1)}h</span>
+            </div>`;
+        });
+    }
+
+    html += `
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 2px solid var(--border);">
+            <h3 style="font-size: 13px; font-weight: 600; margin: 0 0 12px; color: var(--text);">Worklogs by Date</h3>
+    `;
+
+    if (worklogs.length === 0) {
+        html += `<p style="color: var(--text-secondary); font-size: 13px;">No dated worklog details available.</p>`;
+    } else {
+        worklogs.forEach((entry, idx) => {
+            html += `<div style="padding: 8px; background: ${idx % 2 === 0 ? '#f8f9fa' : '#fff'}; margin-bottom: 4px; border-radius: 4px; display: flex; justify-content: space-between; gap: 12px;">
+                <span style="font-weight: 500;">${escHtml(entry.date || '')} · ${escHtml(entry.project || '')} · ${escHtml(entry.issue || '')}</span>
+                <span style="color: var(--text-secondary); font-size: 12px; white-space: nowrap;">${Number(entry.hours || 0).toFixed(1)}h</span>
+            </div>`;
+        });
+    }
+
+    html += `</div>`;
+
+    body.innerHTML = html;
+    modal.classList.remove("hidden");
+}
+
+// ── Modal controls ────────────────────────────────────────────
+function setupModal() {
+    const modal = document.getElementById("drilldownModal");
+    const closeBtn = document.getElementById("closeModal");
+    
+    closeBtn.addEventListener("click", () => {
+        modal.classList.add("hidden");
+    });
+    
+    modal.addEventListener("click", (e) => {
+        if (e.target === modal) {
+            modal.classList.add("hidden");
+        }
+    });
+}
+
+// ── Data table ─────────────────────────────────────────────────
 function renderTable() {
     const tbody = document.getElementById("tableBody");
     const search = document.getElementById("searchInput").value.toLowerCase();

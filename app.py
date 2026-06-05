@@ -10,6 +10,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
+from typing import Any
 
 import pandas as pd
 import requests
@@ -205,6 +206,7 @@ def _transform_worklogs(issues, start_date, end_date):
             if author not in records:
                 records[author] = {col: 0.0 for col in PROJECT_COLUMNS}
                 records[author]["_email"] = author_email
+                records[author]["_worklogs"] = []
             
             # Map project key to column (customer projects, general, or unknown)
             if project_key in PROJECT_COLUMNS:
@@ -215,6 +217,12 @@ def _transform_worklogs(issues, start_date, end_date):
                 col = "Customer Projs"  # fallback for unmapped projects
             
             records[author][col] = records[author].get(col, 0.0) + hours
+            records[author]["_worklogs"].append({
+                "project": col,
+                "issue": issue_key,
+                "date": started,
+                "hours": round(hours, 2),
+            })
             logger.debug("Worklog: %s → %s (%s) = %.2f hours", author, issue_key, col, hours)
 
     logger.info("Processed %d worklogs for %d unique employees", worklog_count, len(records))
@@ -222,12 +230,14 @@ def _transform_worklogs(issues, start_date, end_date):
     rows = []
     for person, hours_map in records.items():
         email = hours_map.pop("_email", "")  # Extract email BEFORE summing
+        worklogs = hours_map.pop("_worklogs", [])
         total = sum(hours_map.values())
         gen_hours = hours_map.get("GEN", 0.0)
         proj_hours = total - gen_hours
         rows.append({
             "name": person,
             "email": email,
+            "worklogs": sorted(worklogs, key=lambda item: (item.get("date", ""), item.get("issue", "")), reverse=True),
             **hours_map,
             "total": round(total, 2),
             "expected": EXPECTED_HOURS,
@@ -247,18 +257,18 @@ def _transform_worklogs(issues, start_date, end_date):
 
 def parse_excel(file_bytes: bytes) -> list[dict]:
     """Parse the uploaded effort-clocking Excel into a list of dicts."""
-    df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
+    df: Any = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
 
     # Detect the name column (first column)
-    name_col = df.columns[0]
-    df = df.rename(columns={name_col: "name"})
+    name_col = str(df.columns[0])
+    df.columns = ["name" if str(c) == name_col else str(c) for c in df.columns]
 
     # Drop summary / NaN rows
     df = df.dropna(subset=["name"])
     df = df[~df["name"].astype(str).str.startswith("NaN")]
 
     # Normalise column names
-    col_map = {}
+    col_map: dict[str, str] = {}
     for c in df.columns:
         cl = str(c).strip()
         if cl.lower() in ("clocked %", "clocked%", "clocked_pct"):
@@ -271,7 +281,7 @@ def parse_excel(file_bytes: bytes) -> list[dict]:
             col_map[c] = "total"
         elif cl.lower() == "expected":
             col_map[c] = "expected"
-    df = df.rename(columns=col_map)
+    df.columns = [col_map.get(c, c) for c in df.columns]
 
     # Fill NaN with 0
     df = df.fillna(0)
@@ -281,7 +291,7 @@ def parse_excel(file_bytes: bytes) -> list[dict]:
         name = str(row.get("name", "")).strip()
         if not name or name.lower() == "nan":
             continue
-        rec = {"name": name}
+        rec: dict[str, Any] = {"name": name, "worklogs": []}
         for col in PROJECT_COLUMNS:
             rec[col] = float(row.get(col, 0))
         rec["total"] = float(row.get("total", 0))
@@ -289,6 +299,7 @@ def parse_excel(file_bytes: bytes) -> list[dict]:
         rec["clocked_pct"] = float(row.get("clocked_pct", 0))
         rec["proj_pct"] = float(row.get("proj_pct", 0))
         rec["general_pct"] = float(row.get("general_pct", 0))
+        rec["worklogs"] = []
         rows.append(rec)
     return rows
 
