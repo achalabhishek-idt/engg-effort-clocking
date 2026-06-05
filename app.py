@@ -53,7 +53,7 @@ EXPECTED_HOURS = int(os.getenv("EXPECTED_HOURS", "168"))
 # Project categories
 PROJECT_COLUMNS = [
     "DMS", "BMS", "IDT", "GEN", "PLT", "ITO", "HU",
-    "DAT", "PAS", "PEM", "Customer Projs", "Platform Projs", "HA", "PEMV2",
+    "DAT", "PAS", "PEM", "Customer Projs", "Platform Projs", "HA", "PEMV2", "ED"
 ]
 CUSTOMER_PROJECTS = ["DMS", "BMS", "IDT", "PLT", "ITO", "HU", "DAT", "PAS", "PEM", "Customer Projs", "Platform Projs", "HA", "PEMV2"]
 GENERAL_PROJECTS = ["GEN"]

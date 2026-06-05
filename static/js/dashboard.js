@@ -87,8 +87,8 @@ function renderKPIs() {
     const avgC = d.reduce((s, r) => s + r.clocked_pct, 0) / n;
     const avgP = d.reduce((s, r) => s + r.proj_pct, 0) / n;
     const avgG = d.reduce((s, r) => s + r.general_pct, 0) / n;
-    const healthy = d.filter(r => r.clocked_pct >= 0.75).length;
-    const low = d.filter(r => r.clocked_pct < 0.30).length;
+    const healthy = d.filter(r => r.clocked_pct > 1.20).length;
+    const low = d.filter(r => r.clocked_pct < 0.80).length;
 
     document.getElementById("kpiTeamSize").textContent = n;
     document.getElementById("kpiClocked").textContent = pct(avgC);
