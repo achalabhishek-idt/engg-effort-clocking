@@ -74,6 +74,7 @@ function renderAll() {
     renderKPIs();
     renderBarChart();
     renderDonutChart();
+    renderProjects();
     renderTable();
     document.getElementById("lastUpdated").textContent = "Updated: " + new Date().toLocaleString("en-IN");
 }
@@ -208,7 +209,55 @@ function renderDonutChart() {
     });
 }
 
-// ── Data table ─────────────────────────────────────────────────
+// ── Project-wise breakdown ────────────────────────────────────
+function renderProjects() {
+    const container = document.getElementById("projectsContainer");
+    const projectList = [
+        "DMS", "BMS", "IDT", "GEN", "PLT", "ITO", "HU",
+        "DAT", "PAS", "PEM", "Customer Projs", "Platform Projs", "HA", "PEMV2"
+    ];
+
+    // Build project -> employees map
+    const projectMap = {};
+    projectList.forEach(proj => { projectMap[proj] = []; });
+
+    dashboardData.forEach(emp => {
+        projectList.forEach(proj => {
+            const hours = emp[proj] || 0;
+            if (hours > 0) {
+                projectMap[proj].push({
+                    name: emp.name,
+                    hours: hours.toFixed(1)
+                });
+            }
+        });
+    });
+
+    // Render cards for projects with employees
+    let html = "";
+    projectList.forEach(proj => {
+        const employees = projectMap[proj].sort((a, b) => parseFloat(b.hours) - parseFloat(a.hours));
+        if (employees.length === 0) return; // Skip empty projects
+
+        html += `<div class="project-item">
+            <div class="project-name">
+                <span>${proj}</span>
+                <span class="project-count">${employees.length}</span>
+            </div>
+            <div class="project-employees">`;
+        
+        employees.forEach(emp => {
+            html += `<div class="project-employee-item">
+                <span class="employee-name">${escHtml(emp.name)}</span>
+                <span class="employee-hours">${emp.hours}h</span>
+            </div>`;
+        });
+
+        html += `</div></div>`;
+    });
+
+    container.innerHTML = html;
+}
 function renderTable() {
     const tbody = document.getElementById("tableBody");
     const search = document.getElementById("searchInput").value.toLowerCase();
