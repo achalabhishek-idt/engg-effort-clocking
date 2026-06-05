@@ -106,7 +106,8 @@ function renderBarChart() {
     const notLogged = dashboardData.filter(r => r.total === 0);
 
     const getColor = (pct) => {
-        if (pct >= 1.0)  return "#00875A";
+        if (pct > 1.0)  return "#6554C0"; // overutilized flag
+        if (pct >= 1.0) return "#00875A";
         if (pct >= 0.75) return "#0052CC";
         if (pct >= 0.40) return "#FF991F";
         return "#DE350B";
@@ -145,10 +146,11 @@ function renderBarChart() {
 
     const legendHtml = `
         <div class="chart-legend-strip" style="margin-top: 12px;">
-            <span class="legend-item"><span class="dot green"></span> ≥100%</span>
+            <span class="legend-item"><span class="dot purple"></span> >100%</span>
+            <span class="legend-item"><span class="dot green"></span> 100%</span>
             <span class="legend-item"><span class="dot blue"></span> 75-99%</span>
-            <span class="legend-item"><span class="dot orange"></span> 1-74%</span>
-            <span class="legend-item"><span class="dot red"></span> 0%</span>
+            <span class="legend-item"><span class="dot orange"></span> 40-74%</span>
+            <span class="legend-item"><span class="dot red"></span> 0-39%</span>
         </div>
     `;
 
@@ -217,7 +219,7 @@ function renderTable() {
     if (filter === "high") rows = rows.filter(r => r.clocked_pct >= 0.75);
     else if (filter === "mid") rows = rows.filter(r => r.clocked_pct >= 0.40 && r.clocked_pct < 0.75);
     else if (filter === "low") rows = rows.filter(r => r.clocked_pct < 0.40);
-    else if (filter === "over") rows = rows.filter(r => r.clocked_pct >= 1.0);
+    else if (filter === "over") rows = rows.filter(r => r.clocked_pct > 1.0);
 
     if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search));
 
@@ -342,10 +344,11 @@ function badge(val, forceColor) {
     let cls;
     if (forceColor === "green") cls = "badge-green";
     else if (forceColor === "amber") cls = "badge-amber";
+    else if (val > 1.0) cls = "badge-red";
+    else if (val >= 1.0) cls = "badge-green";
     else if (val >= 0.75) cls = "badge-green";
     else if (val >= 0.40) cls = "badge-amber";
     else cls = "badge-red";
-    if (val >= 1.0 && !forceColor) cls = "badge-blue";
     return `<span class="badge ${cls}">${p}%</span>`;
 }
 

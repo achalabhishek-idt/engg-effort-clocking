@@ -361,5 +361,8 @@ tbody tr:hover { background: #fafbfc; }
 
 .dot.green  { background: #00875A; }
 .dot.blue   { background: #0052CC; }
+.dot.purple { background: #6554C0; }
+.dot.orange { background: #FF991F; }
+.dot.red    { background: #DE350B; }
 .dot.orange { background: #FF991F; }
 .dot.red    { background: #DE350B; }
