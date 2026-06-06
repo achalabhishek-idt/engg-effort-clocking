@@ -87,15 +87,18 @@ function renderKPIs() {
     const d = dashboardData;
     const n = d.length;
     
-    // Calculate total clocked hours and total expected hours
-    const totalClockedHours = d.reduce((s, r) => s + (r.total || 0), 0);
-    const totalExpectedHours = d.reduce((s, r) => s + (r.expected || 168), 0);
+    // Filter out senior management (excluded from metrics)
+    const metricsData = d.filter(r => !r.exclude_from_metrics);
+    
+    // Calculate total clocked hours and total expected hours (excluding senior mgmt)
+    const totalClockedHours = metricsData.reduce((s, r) => s + (r.total || 0), 0);
+    const totalExpectedHours = metricsData.reduce((s, r) => s + (r.expected || 168), 0);
     const totalClockedPct = totalExpectedHours > 0 ? totalClockedHours / totalExpectedHours : 0;
     
-    const avgP = d.reduce((s, r) => s + r.proj_pct, 0) / n;
-    const zeroHours = d.filter(r => r.total === 0 || r.total === 0.0).length;
-    const healthy = d.filter(r => r.clocked_pct > 1.20).length;
-    const low = d.filter(r => r.clocked_pct < 0.80).length;
+    const avgP = metricsData.reduce((s, r) => s + r.proj_pct, 0) / (metricsData.length || 1);
+    const zeroHours = metricsData.filter(r => r.total === 0 || r.total === 0.0).length;
+    const healthy = metricsData.filter(r => r.clocked_pct > 1.20).length;
+    const low = metricsData.filter(r => r.clocked_pct < 0.80).length;
 
     document.getElementById("kpiTeamSize").textContent = n;
     document.getElementById("kpiClocked").textContent = pct(totalClockedPct);
@@ -162,66 +165,16 @@ function renderBarChart() {
     const container = document.getElementById("barChartContainer");
     if (barChart) { barChart.destroy(); barChart = null; }
 
-    const logged = dashboardData.filter(r => r.total > 0).sort((a, b) => b.total - a.total);
-    const notLogged = dashboardData.filter(r => r.total === 0);
-
-    const getColor = (pct) => {
-        if (pct > 1.0)  return "#6554C0"; // overutilized flag
-        if (pct >= 1.0) return "#00875A";
-        if (pct >= 0.75) return "#0052CC";
-        if (pct >= 0.40) return "#FF991F";
-        return "#DE350B";
-    };
+    // Filter out senior management
+    const metricsData = dashboardData.filter(r => !r.exclude_from_metrics);
+    const logged = metricsData.filter(r => r.total > 0).sort((a, b) => b.total - a.total);
+    const notLogged = metricsData.filter(r => r.total === 0);
 
     let html = "";
 
-    // ── SECTION 2: Top 10 & Bottom 10 ──
-    const top10 = logged.slice(0, 10);
-    const bottom10 = logged.slice(-10).reverse();
-    const maxHours = top10[0]?.total || 168;
-
-    function renderMiniBar(list, title, titleColor, emoji, extraHtml = "") {
-        let s = `<div>
-            <h3 style="font-size:14px; color:${titleColor}; margin:0 0 12px; display:flex; align-items:center; gap:6px;">
-                ${emoji} ${title}
-            </h3>`;
-        list.forEach((r, i) => {
-            const pct = ((r.total / r.expected) * 100).toFixed(0);
-            const width = Math.max(3, (r.total / maxHours) * 100);
-            const color = getColor(r.clocked_pct);
-            s += `<div style="margin-bottom:8px;">
-                <div style="display:flex; justify-content:space-between; font-size:12px; color:#172B4D; margin-bottom:3px;">
-                    <span class="employee-name-link" data-employee-name="${escHtml(r.name)}" style="font-weight:500; cursor:pointer; color:#0052CC; text-decoration:none;">${i + 1}. ${r.name}</span>
-                    <span style="font-weight:700; color:${color};">${r.total.toFixed(1)}h · ${pct}%</span>
-                </div>
-                <div style="background:#F4F5F7; border-radius:4px; height:10px; overflow:hidden;">
-                    <div style="width:${width}%; height:100%; background:${color}; border-radius:4px; transition:width 0.5s;"></div>
-                </div>
-            </div>`;
-        });
-        s += extraHtml;
-        s += `</div>`;
-        return s;
-    }
-
-    const legendHtml = `
-        <div class="chart-legend-strip" style="margin-top: 12px;">
-            <span class="legend-item"><span class="dot purple"></span> >100%</span>
-            <span class="legend-item"><span class="dot green"></span> 100%</span>
-            <span class="legend-item"><span class="dot blue"></span> 75-99%</span>
-            <span class="legend-item"><span class="dot orange"></span> 40-74%</span>
-            <span class="legend-item"><span class="dot red"></span> 0-39%</span>
-        </div>
-    `;
-
-    html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px;">`;
-    html += renderMiniBar(top10, "Top 10 Clockers", "#00875A", "🔝", legendHtml);
-    html += renderMiniBar(bottom10, "Bottom 10 Clockers", "#DE350B", "🔻");
-    html += `</div>`;
-
-    // ── SECTION 4: Not Logged Summary ──
+    // ── Zero Clockers Summary ──
     if (notLogged.length > 0) {
-        html += `<details style="margin-top:16px; padding:12px 16px; background:#FAFBFC; border:1px solid #DFE1E6; border-radius:8px;">
+        html += `<details open style="padding:12px 16px; background:#FAFBFC; border:1px solid #DFE1E6; border-radius:8px;">
             <summary style="cursor:pointer; font-size:13px; color:#6B778C; font-weight:600;">
                 🔴 ${notLogged.length} team members with 0 hours logged
             </summary>
@@ -232,24 +185,13 @@ function renderBarChart() {
     }
 
     container.innerHTML = html;
-    
-    // Attach click handlers to employee names
-    document.querySelectorAll(".employee-name-link").forEach(link => {
-        link.addEventListener("click", (e) => {
-            e.preventDefault();
-            const empName = link.dataset.employeeName;
-            const empData = dashboardData.find(d => d.name === empName);
-            if (empData) {
-                showEmployeeDrilldown(empData);
-            }
-        });
-    });
 }
 
 // ── Donut chart (distribution buckets) ─────────────────────────
 function renderDonutChart() {
     const ctx = document.getElementById("donutChart").getContext("2d");
-    const d = dashboardData;
+    // Filter out senior management
+    const d = dashboardData.filter(r => !r.exclude_from_metrics);
     const buckets = {
         "≥100%": d.filter(r => r.clocked_pct >= 1.0).length,
         "75–99%": d.filter(r => r.clocked_pct >= 0.75 && r.clocked_pct < 1.0).length,
@@ -295,7 +237,9 @@ function renderProjects() {
     const projectMap = {};
     projectList.forEach(proj => { projectMap[proj] = []; });
 
-    dashboardData.forEach(emp => {
+    // Filter out senior management
+    const metricsData = dashboardData.filter(emp => !emp.exclude_from_metrics);
+    metricsData.forEach(emp => {
         projectList.forEach(proj => {
             const hours = emp[proj] || 0;
             if (hours > 0) {
@@ -478,7 +422,8 @@ function renderTable() {
     const search = document.getElementById("searchInput").value.toLowerCase();
     const filter = document.getElementById("filterSelect").value;
 
-    let rows = [...dashboardData];
+    // Filter out senior management
+    let rows = dashboardData.filter(r => !r.exclude_from_metrics);
 
     if (filter === "high") rows = rows.filter(r => r.clocked_pct >= 0.75);
     else if (filter === "mid") rows = rows.filter(r => r.clocked_pct >= 0.40 && r.clocked_pct < 0.75);
@@ -575,7 +520,9 @@ function setupExport() {
     document.getElementById("btnExport").addEventListener("click", () => {
         if (!dashboardData.length) return alert("No data to export");
         const header = "Name,Total Hours,Expected,Clocked %,Proj %,General %";
-        const rows = dashboardData.map(r =>
+        // Exclude senior management from export
+        const exportData = dashboardData.filter(r => !r.exclude_from_metrics);
+        const rows = exportData.map(r =>
             `"${r.name}",${r.total},${r.expected},${(r.clocked_pct*100).toFixed(1)}%,${(r.proj_pct*100).toFixed(1)}%,${(r.general_pct*100).toFixed(1)}%`
         );
         const csv = [header, ...rows].join("\n");

@@ -410,6 +410,7 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
         name = member["name"]
         name_key = name.lower().strip()
         email_key = member.get("email", "").lower().strip()
+        exclude_from_metrics = member.get("exclude_from_metrics", False)
 
         # Try name match first, then email fallback
         row = worklog_by_name.get(name_key) or worklog_by_email.get(email_key)
@@ -417,6 +418,7 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
         if row:
             row["in_roster"] = True
             row["email"] = member.get("email", "")
+            row["exclude_from_metrics"] = exclude_from_metrics
             matched_keys.add(row["name"].lower().strip())
             merged.append(row)
         else:
@@ -424,6 +426,7 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
                 "name": name,
                 "email": member.get("email", ""),
                 "in_roster": True,
+                "exclude_from_metrics": exclude_from_metrics,
                 "total": 0,
                 "expected": expected,
                 "clocked_pct": 0,
