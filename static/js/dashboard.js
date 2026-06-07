@@ -90,22 +90,37 @@ function renderKPIs() {
     // Filter out senior management (excluded from metrics)
     const metricsData = d.filter(r => !r.exclude_from_metrics);
     
+    // Debug logging
+    console.log("Total employees:", n);
+    console.log("Employees in metrics:", metricsData.length);
+    console.log("Sample employee data:", metricsData[0]);
+    
     // Calculate total clocked hours and total expected hours (excluding senior mgmt)
     const totalClockedHours = metricsData.reduce((s, r) => s + (r.total || 0), 0);
     const totalExpectedHours = metricsData.reduce((s, r) => s + (r.expected || 168), 0);
     const totalClockedPct = totalExpectedHours > 0 ? totalClockedHours / totalExpectedHours : 0;
     
-    const avgP = metricsData.reduce((s, r) => s + r.proj_pct, 0) / (metricsData.length || 1);
+    console.log("Total clocked hours:", totalClockedHours);
+    console.log("Total expected hours:", totalExpectedHours);
+    console.log("Total clocked %:", totalClockedPct);
+    
+    const healthyRange = metricsData.filter(r => r.clocked_pct >= 0.80 && r.clocked_pct <= 1.20).length;
     const zeroHours = metricsData.filter(r => r.total === 0 || r.total === 0.0).length;
-    const healthy = metricsData.filter(r => r.clocked_pct > 1.20).length;
-    const low = metricsData.filter(r => r.clocked_pct < 0.80).length;
+    const overworked = metricsData.filter(r => r.clocked_pct > 1.20).length;
+    const underutilized = metricsData.filter(r => r.clocked_pct < 0.80).length;
 
     document.getElementById("kpiTeamSize").textContent = n;
     document.getElementById("kpiClocked").textContent = pct(totalClockedPct);
-    document.getElementById("kpiProj").textContent = pct(avgP);
+    document.getElementById("kpiHealthyRange").textContent = healthyRange;
     document.getElementById("kpiGeneral").textContent = zeroHours;
-    document.getElementById("kpiHealthy").textContent = healthy;
-    document.getElementById("kpiLow").textContent = low;
+    document.getElementById("kpiHealthy").textContent = overworked;
+    document.getElementById("kpiLow").textContent = underutilized;
+    
+    // Update sublabel with actual hours and per-person average
+    const clockedRounded = Math.round(totalClockedHours);
+    const expectedRounded = Math.round(totalExpectedHours);
+    const avgExpectedPerPerson = metricsData.length > 0 ? Math.round(totalExpectedHours / metricsData.length) : 0;
+    document.getElementById("kpiClockedSublabel").textContent = `(${clockedRounded} / ${expectedRounded} hrs | ${avgExpectedPerPerson} hrs/person)`;
     
     // Show expected hours message for current month
     updateExpectedHoursMessage();
@@ -128,10 +143,48 @@ function calculateWorkingDays(year, month) {
     return workingDays;
 }
 
+function getWeekDateRange() {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    
+    // Calculate Monday of current week
+    const monday = new Date(now);
+    const daysFromMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    monday.setDate(now.getDate() + daysFromMonday);
+    
+    // Calculate Friday of current week
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    
+    return { monday, friday };
+}
+
+function getWeekNumber(date) {
+    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+    const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
+    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+}
+
 function updateExpectedHoursMessage() {
     const msgDiv = document.getElementById("expectedHoursMsg");
     
-    if (currentPeriod === "current_month" || currentPeriod === "previous_month") {
+    if (currentPeriod === "current_week") {
+        const { monday, friday } = getWeekDateRange();
+        const weekNum = getWeekNumber(monday);
+        
+        // Format dates as "Jun 02-06"
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const monthName = monthNames[monday.getMonth()];
+        const startDay = monday.getDate().toString().padStart(2, '0');
+        const endDay = friday.getDate().toString().padStart(2, '0');
+        const year = monday.getFullYear();
+        
+        const expectedHours = 40; // 5 days * 8 hours
+        
+        msgDiv.textContent = `Expected Clocking for Week ${weekNum} (${monthName} ${startDay}-${endDay}, ${year}) is ${expectedHours} hrs`;
+        msgDiv.style.display = "block";
+    } else if (currentPeriod === "current_month" || currentPeriod === "previous_month") {
         const now = new Date();
         let year = now.getFullYear();
         let month = now.getMonth(); // 0-indexed

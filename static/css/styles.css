@@ -139,6 +139,13 @@ body {
     font-size: 28px;
     font-weight: 700;
 }
+.kpi-sublabel {
+    display: block;
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-weight: 400;
+}
 .highlight-blue .kpi-value { color: var(--blue); }
 .highlight-green .kpi-value { color: var(--green); }
 .highlight-amber .kpi-value { color: var(--amber); }
