@@ -7,9 +7,11 @@
 let dashboardData = [];
 let barChart = null;
 let donutChart = null;
+let trendChart = null;
 let sortCol = "clocked_pct";
 let sortAsc = false;
 let currentPeriod = "current_week";
+let trendType = "utilization";
 
 // ── Init ───────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -18,9 +20,10 @@ document.addEventListener("DOMContentLoaded", () => {
     setupSearch();
     setupFilter();
     setupExport();
-    setupInsights();
     setupTableSort();
     setupModal();
+    setupComparison();
+    setupTrendControls();
     loadPeriod("current_week");
 });
 
@@ -31,10 +34,17 @@ function setupTabs() {
             document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
             btn.classList.add("active");
             const period = btn.dataset.period;
+            
+            // Hide all panels
+            document.getElementById("uploadPanel").classList.add("hidden");
+            document.getElementById("customRangePanel").classList.add("hidden");
+            
             if (period === "upload") {
                 document.getElementById("uploadPanel").classList.remove("hidden");
+            } else if (period === "custom_range") {
+                document.getElementById("customRangePanel").classList.remove("hidden");
+                setupCustomRange();
             } else {
-                document.getElementById("uploadPanel").classList.add("hidden");
                 currentPeriod = period;
                 loadPeriod(period);
             }
@@ -42,33 +52,79 @@ function setupTabs() {
     });
 }
 
+function setupCustomRange() {
+    const startInput = document.getElementById("startDate");
+    const endInput = document.getElementById("endDate");
+    const btn = document.getElementById("btnLoadCustomRange");
+    
+    // Set default dates (last 7 days)
+    const today = new Date();
+    const lastWeek = new Date(today);
+    lastWeek.setDate(today.getDate() - 7);
+    
+    endInput.valueAsDate = today;
+    startInput.valueAsDate = lastWeek;
+    
+    btn.onclick = async () => {
+        const start = startInput.value;
+        const end = endInput.value;
+        
+        if (!start || !end) {
+            alert("Please select both start and end dates");
+            return;
+        }
+        
+        if (new Date(start) > new Date(end)) {
+            alert("Start date must be before end date");
+            return;
+        }
+        
+        btn.textContent = "Loading...";
+        btn.disabled = true;
+        
+        try {
+            showLoading();
+            const res = await fetch(`/api/data/custom?start=${start}&end=${end}`);
+            const json = await res.json();
+            
+            if (json.data && json.data.length) {
+                dashboardData = json.data;
+                currentPeriod = "custom_range";
+                renderAll();
+            } else if (json.error) {
+                alert("Error: " + json.error);
+            } else {
+                alert("No data found for the selected date range");
+            }
+        } catch (e) {
+            console.error("Custom range error:", e);
+            alert("Error loading data: " + e.message);
+        } finally {
+            hideLoading();
+            btn.textContent = "Load Data";
+            btn.disabled = false;
+        }
+    };
+}
+
 // ── Data loading ───────────────────────────────────────────────
 async function loadPeriod(period) {
     showLoading();
-    document.getElementById("insightsContent").innerHTML =
-        '<span class="spinner"></span> Loading data from JIRA…';
     try {
         const res = await fetch(`/api/data?period=${period}`);
         const json = await res.json();
         if (json.data && json.data.length) {
             dashboardData = json.data;
             renderAll();
-            document.getElementById("insightsContent").innerHTML =
-                '<p class="placeholder-text">Click "Generate Insights" for AI analysis.</p>';
         } else if (json.error) {
-            document.getElementById("insightsContent").innerHTML =
-                `<p style="color:#de350b">⚠️ ${json.error}</p>
-                 <p>Use the <strong>Upload Excel</strong> tab to load data manually.</p>`;
+            alert("Error: " + json.error + "\n\nUse the Upload Excel tab to load data manually.");
         } else {
-            document.getElementById("insightsContent").innerHTML =
-                `<p style="color:#ff991f">⚠️ No worklogs found for this period.</p>
-                 <p>Try <strong>Previous Month</strong> or <strong>Upload Excel</strong>.</p>`;
+            alert("No worklogs found for this period.\n\nTry Previous Month or Upload Excel.");
         }
     } catch (e) {
         console.error("Load error:", e);
-        document.getElementById("insightsContent").innerHTML =
-            `<p style="color:#de350b">❌ Connection error: ${e.message}</p>`;
-    }   finally {
+        alert("Connection error: " + e.message);
+    } finally {
         hideLoading();
     }
 }
@@ -79,6 +135,11 @@ function renderAll() {
     renderDonutChart();
     renderProjects();
     renderTable();
+    renderAlerts();
+    renderAnomalies();
+    renderProjectHealth();
+    renderTrendChart();
+    renderDailyBreakdownControls();
     document.getElementById("lastUpdated").textContent = "Updated: " + new Date().toLocaleString("en-IN");
 }
 
@@ -588,24 +649,6 @@ function setupExport() {
 }
 
 // ── AI Insights ────────────────────────────────────────────────
-function setupInsights() {
-    document.getElementById("btnInsights").addEventListener("click", async () => {
-        const el = document.getElementById("insightsContent");
-        el.innerHTML = '<span class="spinner"></span> Generating insights…';
-        try {
-            const res = await fetch("/api/insights", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ data: dashboardData }),
-            });
-            const json = await res.json();
-            el.innerHTML = json.insights || "No insights generated.";
-        } catch (e) {
-            el.textContent = "Error generating insights: " + e.message;
-        }
-    });
-}
-
 // ── Helpers ────────────────────────────────────────────────────
 function pct(v) { return (v * 100).toFixed(1) + "%"; }
 
@@ -643,3 +686,492 @@ function hideLoading() {
 
 // Call showLoading() BEFORE your fetch call
 // Call hideLoading() AFTER data is rendered
+
+// ── NEW FEATURES ───────────────────────────────────────────────
+
+// F: Real-time Alerts
+function renderAlerts() {
+    const container = document.getElementById("alertsContainer");
+    const metricsData = dashboardData.filter(r => !r.exclude_from_metrics);
+    const alerts = [];
+    
+    // Zero hours logged
+    const zeroHours = metricsData.filter(r => r.total === 0);
+    if (zeroHours.length > 0) {
+        alerts.push({
+            type: "critical",
+            icon: "🚫",
+            title: `${zeroHours.length} team member(s) with zero hours logged`,
+            description: zeroHours.slice(0, 5).map(r => r.name).join(", ") + (zeroHours.length > 5 ? "..." : "")
+        });
+    }
+    
+    // Consistently overworked (>120%)
+    const overworked = metricsData.filter(r => r.clocked_pct > 1.20);
+    if (overworked.length > 0) {
+        alerts.push({
+            type: "warning",
+            icon: "⚡",
+            title: `${overworked.length} team member(s) over 120% utilization`,
+            description: overworked.slice(0, 5).map(r => r.name).join(", ") + (overworked.length > 5 ? "..." : "")
+        });
+    }
+    
+    // Under-utilized (<40%)
+    const underutilized = metricsData.filter(r => r.clocked_pct < 0.40 && r.total > 0);
+    if (underutilized.length > 0) {
+        alerts.push({
+            type: "info",
+            icon: "ℹ️",
+            title: `${underutilized.length} team member(s) below 40% utilization`,
+            description: underutilized.slice(0, 5).map(r => r.name).join(", ") + (underutilized.length > 5 ? "..." : "")
+        });
+    }
+    
+    if (alerts.length === 0) {
+        container.innerHTML = '<div class="alert-empty">✅ No alerts - team utilization looks healthy!</div>';
+        return;
+    }
+    
+    let html = "";
+    alerts.forEach(alert => {
+        html += `<div class="alert-item ${alert.type}">
+            <span class="alert-icon">${alert.icon}</span>
+            <div class="alert-content">
+                <div class="alert-title">${alert.title}</div>
+                <div class="alert-description">${alert.description}</div>
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+// G: Anomaly Detection
+function renderAnomalies() {
+    const container = document.getElementById("anomalyContainer");
+    const metricsData = dashboardData.filter(r => !r.exclude_from_metrics);
+    const anomalies = [];
+    
+    // Check for extreme single-day logging (if worklogs available)
+    metricsData.forEach(person => {
+        if (!person.worklogs || person.worklogs.length === 0) return;
+        
+        // Group by date
+        const dailyHours = {};
+        person.worklogs.forEach(wl => {
+            const date = wl.date;
+            dailyHours[date] = (dailyHours[date] || 0) + wl.hours;
+        });
+        
+        // Flag days with >12 hours
+        Object.entries(dailyHours).forEach(([date, hours]) => {
+            if (hours > 12) {
+                anomalies.push(`<strong>${escHtml(person.name)}</strong> logged ${hours.toFixed(1)}h on ${date}`);
+            }
+        });
+        
+        // Check for weekend logging
+        person.worklogs.forEach(wl => {
+            // Parse date in local timezone to avoid day shifting
+            const [year, month, day] = wl.date.split('-').map(Number);
+            const date = new Date(year, month - 1, day);
+            const dayOfWeek = date.getDay();
+            if (dayOfWeek === 0 || dayOfWeek === 6) {  // Sunday or Saturday
+                anomalies.push(`<strong>${escHtml(person.name)}</strong> logged ${wl.hours}h on ${wl.date} (weekend)`);
+            }
+        });
+    });
+    
+    if (anomalies.length === 0) {
+        container.innerHTML = '<div class="anomaly-empty">✅ No anomalies detected</div>';
+        return;
+    }
+    
+    let html = "";
+    anomalies.slice(0, 10).forEach(anomaly => {
+        html += `<div class="anomaly-item">${anomaly}</div>`;
+    });
+    if (anomalies.length > 10) {
+        html += `<div class="anomaly-item">...and ${anomalies.length - 10} more anomalies</div>`;
+    }
+    container.innerHTML = html;
+}
+
+// I: Project Health Dashboard
+function renderProjectHealth() {
+    const container = document.getElementById("projectHealthContainer");
+    const projectList = [
+        "DMS", "BMS", "IDT", "GEN", "PLT", "ITO", "HU",
+        "DAT", "PAS", "PEM", "Customer Projs", "Platform Projs", "HA", "PEMV2", "ED"
+    ];
+    
+    const metricsData = dashboardData.filter(r => !r.exclude_from_metrics);
+    let html = "";
+    
+    projectList.forEach(proj => {
+        const totalHours = metricsData.reduce((sum, emp) => sum + (emp[proj] || 0), 0);
+        if (totalHours === 0) return;  // Skip projects with no hours
+        
+        // Simple staffing level logic (can be customized)
+        let status, label;
+        if (totalHours > 200) {
+            status = "healthy";
+            label = "Healthy";
+        } else if (totalHours > 100) {
+            status = "understaffed";
+            label = "Moderate";
+        } else {
+            status = "understaffed";
+            label = "Low";
+        }
+        
+        html += `<div class="project-health-item ${status}">
+            <div class="project-health-name">${proj}</div>
+            <div class="project-health-hours">${Math.round(totalHours)}h</div>
+            <div class="project-health-label">${label}</div>
+        </div>`;
+    });
+    
+    container.innerHTML = html || '<div style="padding: 24px; text-align: center; color: var(--text-secondary);">No project data available</div>';
+}
+
+// J: Comparison Mode
+function setupComparison() {
+    const btn = document.getElementById("btnToggleComparison");
+    const content = document.getElementById("comparisonContent");
+    
+    btn.addEventListener("click", async () => {
+        if (content.classList.contains("hidden")) {
+            btn.textContent = "Loading...";
+            btn.disabled = true;
+            await loadComparisonData();
+            content.classList.remove("hidden");
+            btn.textContent = "Hide Comparison";
+            btn.disabled = false;
+        } else {
+            content.classList.add("hidden");
+            btn.textContent = "Enable Comparison";
+        }
+    });
+}
+
+async function loadComparisonData() {
+    // Determine previous period
+    let previousPeriod;
+    if (currentPeriod === "current_week") {
+        previousPeriod = "previous_week";
+    } else if (currentPeriod === "current_month") {
+        previousPeriod = "previous_month";
+    } else {
+        previousPeriod = "previous_month";
+    }
+    
+    try {
+        const res = await fetch(`/api/data?period=${previousPeriod}`);
+        const json = await res.json();
+        
+        if (json.data) {
+            renderComparisonView(dashboardData, json.data);
+        }
+    } catch (e) {
+        console.error("Comparison load error:", e);
+    }
+}
+
+function renderComparisonView(current, previous) {
+    const metricsData = current.filter(r => !r.exclude_from_metrics);
+    const prevMetricsData = previous.filter(r => !r.exclude_from_metrics);
+    
+    const currentMetrics = {
+        teamSize: metricsData.length,
+        totalHours: metricsData.reduce((s, r) => s + (r.total || 0), 0),
+        avgClocked: metricsData.reduce((s, r) => s + (r.clocked_pct || 0), 0) / metricsData.length,
+        zeroHours: metricsData.filter(r => r.total === 0).length
+    };
+    
+    const prevMetrics = {
+        teamSize: prevMetricsData.length,
+        totalHours: prevMetricsData.reduce((s, r) => s + (r.total || 0), 0),
+        avgClocked: prevMetricsData.reduce((s, r) => s + (r.clocked_pct || 0), 0) / prevMetricsData.length,
+        zeroHours: prevMetricsData.filter(r => r.total === 0).length
+    };
+    
+    const delta = {
+        teamSize: currentMetrics.teamSize - prevMetrics.teamSize,
+        totalHours: currentMetrics.totalHours - prevMetrics.totalHours,
+        avgClocked: currentMetrics.avgClocked - prevMetrics.avgClocked,
+        zeroHours: currentMetrics.zeroHours - prevMetrics.zeroHours
+    };
+    
+    document.getElementById("currentPeriodMetrics").innerHTML = `
+        <div class="metric-row"><span class="metric-label">Team Size</span><span class="metric-value">${currentMetrics.teamSize}</span></div>
+        <div class="metric-row"><span class="metric-label">Total Hours</span><span class="metric-value">${Math.round(currentMetrics.totalHours)}</span></div>
+        <div class="metric-row"><span class="metric-label">Avg Clocked %</span><span class="metric-value">${pct(currentMetrics.avgClocked)}</span></div>
+        <div class="metric-row"><span class="metric-label">Zero Hours</span><span class="metric-value">${currentMetrics.zeroHours}</span></div>
+    `;
+    
+    document.getElementById("previousPeriodMetrics").innerHTML = `
+        <div class="metric-row"><span class="metric-label">Team Size</span><span class="metric-value">${prevMetrics.teamSize}</span></div>
+        <div class="metric-row"><span class="metric-label">Total Hours</span><span class="metric-value">${Math.round(prevMetrics.totalHours)}</span></div>
+        <div class="metric-row"><span class="metric-label">Avg Clocked %</span><span class="metric-value">${pct(prevMetrics.avgClocked)}</span></div>
+        <div class="metric-row"><span class="metric-label">Zero Hours</span><span class="metric-value">${prevMetrics.zeroHours}</span></div>
+    `;
+    
+    document.getElementById("deltaMetrics").innerHTML = `
+        <div class="metric-row"><span class="metric-label">Team Size</span><span class="metric-value ${delta.teamSize >= 0 ? 'positive' : 'negative'}">${delta.teamSize >= 0 ? '+' : ''}${delta.teamSize}</span></div>
+        <div class="metric-row"><span class="metric-label">Total Hours</span><span class="metric-value ${delta.totalHours >= 0 ? 'positive' : 'negative'}">${delta.totalHours >= 0 ? '+' : ''}${Math.round(delta.totalHours)}</span></div>
+        <div class="metric-row"><span class="metric-label">Avg Clocked %</span><span class="metric-value ${delta.avgClocked >= 0 ? 'positive' : 'negative'}">${delta.avgClocked >= 0 ? '+' : ''}${pct(delta.avgClocked)}</span></div>
+        <div class="metric-row"><span class="metric-label">Zero Hours</span><span class="metric-value ${delta.zeroHours <= 0 ? 'positive' : 'negative'}">${delta.zeroHours >= 0 ? '+' : ''}${delta.zeroHours}</span></div>
+    `;
+}
+
+// B: Daily Breakdown View
+function renderDailyBreakdownControls() {
+    const select = document.getElementById("personSelect");
+    select.innerHTML = '<option value="">Select a team member...</option>';
+    
+    dashboardData.forEach(person => {
+        const option = document.createElement("option");
+        option.value = person.name;
+        option.textContent = person.name;
+        select.appendChild(option);
+    });
+    
+    select.addEventListener("change", (e) => {
+        if (e.target.value) {
+            renderDailyBreakdown(e.target.value);
+        } else {
+            document.getElementById("dailyBreakdownContainer").innerHTML = '';
+        }
+    });
+}
+
+function renderDailyBreakdown(personName) {
+    const person = dashboardData.find(p => p.name === personName);
+    if (!person) {
+        document.getElementById("dailyBreakdownContainer").innerHTML = '<div style="padding: 24px; text-align: center; color: var(--text-secondary);">No data available for this person</div>';
+        return;
+    }
+    
+    // Group by date from worklogs
+    const dailyHours = {};
+    if (person.worklogs && person.worklogs.length > 0) {
+        person.worklogs.forEach(wl => {
+            const date = wl.date;
+            dailyHours[date] = (dailyHours[date] || 0) + wl.hours;
+        });
+    }
+    
+    // For month views, show all days in the month
+    let datesToShow = [];
+    if (currentPeriod === "current_month" || currentPeriod === "previous_month") {
+        const today = new Date();
+        let year = today.getFullYear();
+        let month = today.getMonth();
+        
+        if (currentPeriod === "previous_month") {
+            month -= 1;
+            if (month < 0) {
+                month = 11;
+                year -= 1;
+            }
+        }
+        
+        // Generate all days in the month
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        
+        for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+            // Format date in local timezone (YYYY-MM-DD)
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            datesToShow.push({
+                date: dateStr,
+                hours: dailyHours[dateStr] || 0,
+                dateObj: new Date(d)
+            });
+        }
+    } else {
+        // For other periods, show only days with logs
+        datesToShow = Object.entries(dailyHours).map(([date, hours]) => {
+            // Parse date in local timezone (not UTC) to avoid day shifting
+            const [year, month, day] = date.split('-').map(Number);
+            const dateObj = new Date(year, month - 1, day);
+            return {
+                date: date,
+                hours: hours,
+                dateObj: dateObj
+            };
+        }).sort((a, b) => a.dateObj - b.dateObj);
+    }
+    
+    if (datesToShow.length === 0) {
+        document.getElementById("dailyBreakdownContainer").innerHTML = '<div style="padding: 24px; text-align: center; color: var(--text-secondary);">No worklog data available for this person</div>';
+        return;
+    }
+    
+    // Generate day cards
+    let html = '<div class="daily-details-grid">';
+    datesToShow.forEach(({date, hours, dateObj}) => {
+        const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+        const dayNum = dateObj.getDate();
+        const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+        const hasHours = hours > 0;
+        
+        html += `<div class="daily-day-card ${isWeekend ? 'active' : ''} ${!hasHours ? 'zero-hours' : ''}">
+            <div class="daily-day-name">${dayName} ${dayNum}</div>
+            <div class="daily-day-hours">${hours.toFixed(1)}h</div>
+            <div class="daily-day-date">${date}</div>
+        </div>`;
+    });
+    html += '</div>';
+    
+    document.getElementById("dailyDetails").innerHTML = html;
+}
+
+// A: Trend Analysis
+function setupTrendControls() {
+    document.querySelectorAll(".trend-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            document.querySelectorAll(".trend-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            trendType = btn.dataset.trend;
+            renderTrendChart();
+        });
+    });
+}
+
+function renderTrendChart() {
+    const ctx = document.getElementById("trendChart");
+    if (!ctx) return;
+    
+    const metricsData = dashboardData.filter(r => !r.exclude_from_metrics);
+    
+    // Simulate trend data for demonstration
+    // In production, you'd fetch historical data from backend
+    const labels = generateTrendLabels();
+    const datasets = generateTrendDatasets(metricsData, labels);
+    
+    if (trendChart) trendChart.destroy();
+    
+    trendChart = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: "top",
+                    labels: { font: { size: 12 }, padding: 16 }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            if (trendType === "utilization") {
+                                return value + "%";
+                            }
+                            return value + "h";
+                        }
+                    }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    });
+}
+
+function generateTrendLabels() {
+    // Generate last 8 weeks/periods for trend
+    const labels = [];
+    const today = new Date();
+    
+    if (currentPeriod.includes("month")) {
+        // Monthly trend - show last 6 months
+        for (let i = 5; i >= 0; i--) {
+            const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+            labels.push(date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+        }
+    } else {
+        // Weekly trend - show last 8 weeks
+        for (let i = 7; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(today.getDate() - (i * 7));
+            labels.push("W" + getWeekNumber(date));
+        }
+    }
+    
+    return labels;
+}
+
+function generateTrendDatasets(metricsData, labels) {
+    const currentValue = calculateCurrentMetric(metricsData);
+    
+    // Simulate historical trend (in production, fetch from backend)
+    const data = labels.map((label, idx) => {
+        // Generate realistic trend with slight variations
+        const variation = (Math.random() - 0.5) * 10;
+        const trend = currentValue + variation - (labels.length - idx - 1) * 2;
+        return Math.max(0, trend);
+    });
+    
+    let dataset = {};
+    
+    if (trendType === "utilization") {
+        dataset = {
+            label: "Team Utilization %",
+            data: data,
+            borderColor: "#0052CC",
+            backgroundColor: "rgba(0, 82, 204, 0.1)",
+            tension: 0.3,
+            fill: true
+        };
+    } else if (trendType === "project") {
+        dataset = {
+            label: "Project Hours",
+            data: data,
+            borderColor: "#00875A",
+            backgroundColor: "rgba(0, 135, 90, 0.1)",
+            tension: 0.3,
+            fill: true
+        };
+    } else if (trendType === "general") {
+        dataset = {
+            label: "General Hours",
+            data: data,
+            borderColor: "#FF991F",
+            backgroundColor: "rgba(255, 153, 31, 0.1)",
+            tension: 0.3,
+            fill: true
+        };
+    }
+    
+    return [dataset];
+}
+
+function calculateCurrentMetric(metricsData) {
+    if (trendType === "utilization") {
+        const avgClocked = metricsData.reduce((s, r) => s + (r.clocked_pct || 0), 0) / metricsData.length;
+        return avgClocked * 100;
+    } else if (trendType === "project") {
+        const totalProj = metricsData.reduce((s, r) => s + (r.total - (r.GEN || 0)), 0);
+        return totalProj / metricsData.length;
+    } else if (trendType === "general") {
+        const totalGen = metricsData.reduce((s, r) => s + (r.GEN || 0), 0);
+        return totalGen / metricsData.length;
+    }
+    return 0;
+}

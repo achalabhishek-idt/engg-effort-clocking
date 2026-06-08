@@ -39,8 +39,24 @@
     <button class="tab active" data-period="current_week">Current Week</button>
     <button class="tab" data-period="current_month">Current Month</button>
     <button class="tab" data-period="previous_month">Previous Month</button>
+    <button class="tab" data-period="custom_range">Custom Range</button>
     <button class="tab" data-period="upload">Upload Excel</button>
 </nav>
+
+<!-- Custom Range Panel -->
+<div id="customRangePanel" class="custom-range-panel hidden">
+    <div class="custom-range-controls">
+        <div class="date-input-group">
+            <label for="startDate">Start Date:</label>
+            <input type="date" id="startDate" class="date-input">
+        </div>
+        <div class="date-input-group">
+            <label for="endDate">End Date:</label>
+            <input type="date" id="endDate" class="date-input">
+        </div>
+        <button id="btnLoadCustomRange" class="btn btn-primary">Load Data</button>
+    </div>
+</div>
 
 <!-- Upload panel (hidden by default) -->
 <div id="uploadPanel" class="upload-panel hidden">
@@ -122,15 +138,91 @@
     </div>
 </div>
 
-<!-- AI Insights -->
-<section class="insights-section">
-    <div class="insights-card">
-        <div class="insights-header">
-            <h3>🤖 AI Insights <span class="powered-by">powered by Claude</span></h3>
-            <button id="btnInsights" class="btn btn-primary">Generate Insights</button>
+
+
+<!-- F: Real-time Alerts Section -->
+<section class="alerts-section">
+    <div class="alerts-card">
+        <h3>🚨 Real-time Alerts</h3>
+        <div id="alertsContainer" class="alerts-grid">
+            <!-- Populated by JS -->
         </div>
-        <div id="insightsContent" class="insights-body">
-            <p class="placeholder-text">Click "Generate Insights" to get AI-powered analysis of your team's utilization.</p>
+    </div>
+</section>
+
+<!-- G: Anomaly Detection -->
+<section class="anomaly-section">
+    <div class="anomaly-card">
+        <h3>⚠️ Anomaly Detection</h3>
+        <div id="anomalyContainer" class="anomaly-list">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+</section>
+
+<!-- I: Project Health Dashboard -->
+<section class="project-health-section">
+    <div class="project-health-card">
+        <h3>💼 Project Health Dashboard</h3>
+        <div id="projectHealthContainer" class="project-health-grid">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+</section>
+
+<!-- J: Comparison Mode -->
+<section class="comparison-section">
+    <div class="comparison-card">
+        <div class="comparison-header">
+            <h3>📊 Period Comparison</h3>
+            <button id="btnToggleComparison" class="btn btn-secondary">Enable Comparison</button>
+        </div>
+        <div id="comparisonContent" class="comparison-display hidden">
+            <div class="comparison-grid">
+                <div class="comparison-col">
+                    <h4 id="currentPeriodTitle">Current Period</h4>
+                    <div id="currentPeriodMetrics" class="metrics-list"></div>
+                </div>
+                <div class="comparison-col">
+                    <h4 id="previousPeriodTitle">Previous Period</h4>
+                    <div id="previousPeriodMetrics" class="metrics-list"></div>
+                </div>
+                <div class="comparison-col">
+                    <h4>Delta</h4>
+                    <div id="deltaMetrics" class="metrics-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- A: Trend Analysis -->
+<section class="trend-section">
+    <div class="trend-card">
+        <h3>📈 Trend Analysis <span style="font-size: 11px; font-weight: 400; color: var(--text-secondary);">(Simulated Data)</span></h3>
+        <div class="trend-controls">
+            <button class="trend-btn active" data-trend="utilization">Team Utilization</button>
+            <button class="trend-btn" data-trend="project">Project Hours</button>
+            <button class="trend-btn" data-trend="general">General Hours</button>
+        </div>
+        <div id="trendChartContainer">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+</section>
+
+<!-- B: Daily Breakdown View -->
+<section class="daily-section">
+    <div class="daily-card">
+        <h3>📅 Daily Breakdown View</h3>
+        <div class="daily-controls">
+            <select id="personSelect" class="person-select">
+                <option value="">Select a team member...</option>
+            </select>
+        </div>
+        <div id="dailyBreakdownContainer" class="daily-display">
+            <div id="dailyHeatmap"></div>
+            <div id="dailyDetails" class="daily-details-grid"></div>
         </div>
     </div>
 </section>
@@ -168,7 +260,7 @@
 </section>
 
 <footer class="footer">
-    <p>Engineering Effort Clocking Dashboard · Data refreshes daily at 09:00 AM IST · <a href="https://github.com/achalabhishek-idt/engg-effort-clocking" target="_blank">GitHub</a></p>
+    <p>Engineering Effort Clocking Dashboard · Data refreshes daily at 09:00 AM IST</p>
 </footer>
 
 <script src="/static/js/dashboard.js"></script>

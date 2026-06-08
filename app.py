@@ -47,7 +47,6 @@ logger = logging.getLogger(__name__)
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "https://subex.atlassian.net")
 JIRA_EMAIL = os.getenv("JIRA_EMAIL", "")
 JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "") or os.getenv("JIRA_TOKEN", "")
-CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 EXPECTED_HOURS = int(os.getenv("EXPECTED_HOURS", "168"))
 
 # Project categories
@@ -305,74 +304,9 @@ def parse_excel(file_bytes: bytes) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Claude AI insights
 # ---------------------------------------------------------------------------
-
-def get_claude_insights(data: list[dict]) -> str:
-    """Call Claude API to analyse the utilization data."""
-    if not CLAUDE_API_KEY:
-        return _fallback_insights(data)
-
-    summary_rows = []
-    for r in data[:30]:  # send top 30 to keep token usage low
-        summary_rows.append(
-            f"{r['name']}: Clocked={r['clocked_pct']:.0%}, Proj={r['proj_pct']:.0%}, General={r['general_pct']:.0%}"
-        )
-    prompt = (
-        "You are an engineering manager AI assistant. Analyse the following team utilization data "
-        "and provide 4-5 bullet-point insights focusing on:\n"
-        "1. Overall team clocking health\n"
-        "2. Who is over/under-utilized\n"
-        "3. Balance between project work vs general/overhead\n"
-        "4. Actionable recommendations\n\n"
-        "Data (Clocked% = total/168h, Proj% = project hours/168h, General% = overhead/168h):\n"
-        + "\n".join(summary_rows)
-    )
-
-    try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": CLAUDE_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 1024,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["content"][0]["text"]
-    except Exception as exc:
-        logger.warning("Claude API error: %s — using fallback insights", exc)
-        return _fallback_insights(data)
-
-
-def _fallback_insights(data: list[dict]) -> str:
-    """Generate basic insights without Claude."""
-    if not data:
-        return "No data available for analysis."
-
-    avg_clocked = sum(r["clocked_pct"] for r in data) / len(data)
-    avg_proj = sum(r["proj_pct"] for r in data) / len(data)
-    avg_gen = sum(r["general_pct"] for r in data) / len(data)
-
-    over = [r["name"] for r in data if r["clocked_pct"] >= 1.0]
-    under = [r["name"] for r in data if r["clocked_pct"] < 0.30]
-    healthy = [r for r in data if 0.75 <= r["clocked_pct"] < 1.0]
-
-    lines = [
-        f"📊 **Team Overview** — {len(data)} members, avg clocking {avg_clocked:.0%}",
-        f"✅ **Healthy range (75-100%):** {len(healthy)} members",
-        f"⚠️ **Over-utilized (≥100%):** {', '.join(over) if over else 'None'}",
-        f"🔴 **Under-clocked (<30%):** {', '.join(under) if under else 'None'}",
-        f"📈 **Avg Project %:** {avg_proj:.0%} | **Avg General/Overhead %:** {avg_gen:.0%}",
-    ]
-    return "\n".join(lines)
-
+# Team roster management
+# ---------------------------------------------------------------------------
 
 def load_team_roster():
     """Load fixed team roster from JSON file."""
@@ -427,6 +361,7 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
                 "email": member.get("email", ""),
                 "in_roster": True,
                 "exclude_from_metrics": exclude_from_metrics,
+                "worklogs": [],
                 "total": 0,
                 "expected": expected,
                 "clocked_pct": 0,
@@ -526,6 +461,58 @@ def api_data():
     result["roster_size"] = 111
     return jsonify(result), 200
 
+@app.route("/api/data/custom", methods=["GET"])
+def api_data_custom():
+    """Fetch data for custom date range."""
+    start_str = request.args.get("start")
+    end_str = request.args.get("end")
+    
+    if not start_str or not end_str:
+        return jsonify({"error": "Missing start or end date"}), 400
+    
+    try:
+        start_date = datetime.strptime(start_str, "%Y-%m-%d")
+        end_date = datetime.strptime(end_str, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+    
+    if start_date > end_date:
+        return jsonify({"error": "Start date must be before end date"}), 400
+    
+    # Calculate expected hours based on date range
+    days_diff = (end_date - start_date).days + 1
+    weeks = days_diff / 7
+    period_expected = int(weeks * 40)  # 40 hours per week
+    
+    cache_key = f"{start_str}_{end_str}"
+    if cache_key in CACHE and (time.time() - CACHE[cache_key]["ts"]) < CACHE_TTL:
+        logger.info("Cache HIT for custom range %s", cache_key)
+        result = CACHE[cache_key]["data"]
+    else:
+        logger.info("Cache MISS — fetching custom range from JIRA...")
+        result = fetch_jira_worklogs(start_str, end_str)
+        CACHE[cache_key] = {"data": result, "ts": time.time()}
+    
+    # Merge with roster
+    if "data" in result:
+        result["data"] = merge_roster_with_worklogs(result.get("data", []), period_expected)
+    else:
+        result["data"] = merge_roster_with_worklogs([], period_expected)
+    
+    # Recalculate percentages
+    for row in result["data"]:
+        row["expected"] = period_expected
+        total = row.get("total", 0)
+        row["clocked_pct"] = round(total / period_expected, 4) if period_expected else 0
+    
+    result["period"] = "custom_range"
+    result["expected_hours"] = period_expected
+    result["team_size"] = len(result["data"])
+    result["roster_size"] = 111
+    result["start"] = start_str
+    result["end"] = end_str
+    return jsonify(result), 200
+
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
     """Accept an Excel upload and return parsed data."""
@@ -543,17 +530,6 @@ def api_upload():
         return jsonify({"error": str(exc)}), 500
 
 
-@app.route("/api/insights", methods=["POST"])
-def api_insights():
-    """Generate AI insights from posted data."""
-    body = request.get_json(silent=True) or {}
-    data = body.get("data", [])
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
-    insights = get_claude_insights(data)
-    return jsonify({"insights": insights})
-
-
 @app.route("/api/health")
 def health():
     return jsonify({"status": "ok", "timestamp": datetime.utcnow().isoformat()})
@@ -566,7 +542,6 @@ def debug_config():
         "jira_base_url": JIRA_BASE_URL[:30] + "..." if JIRA_BASE_URL else None,
         "jira_email_set": bool(JIRA_EMAIL),
         "jira_token_set": bool(JIRA_API_TOKEN),
-        "claude_key_set": bool(CLAUDE_API_KEY),
         "expected_hours": EXPECTED_HOURS,
     })
 
