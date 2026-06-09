@@ -12,15 +12,15 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
-import pandas as pd
 import requests
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from threading import Thread
 
 CACHE = {}
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 1800  # 30 minutes
 
 # JIRA display name → Excel roster name mapping
 NAME_MAP = {
@@ -117,7 +117,7 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
         params = {
             "jql": jql,
             "maxResults": max_results,
-            "fields": "worklog,project,summary,assignee",
+            "fields": "worklog,project",
         }
         if next_token:
             params["nextPageToken"] = next_token
@@ -153,7 +153,7 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
     ]
     logger.info("Fetching full worklogs for %d issues in parallel...", len(needs_full))
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         futures = {executor.submit(_fetch_full_worklogs, iss["key"]): iss for iss in needs_full}
         for future in as_completed(futures):
             iss = futures[future]
@@ -256,6 +256,7 @@ def _transform_worklogs(issues, start_date, end_date):
 
 def parse_excel(file_bytes: bytes) -> list[dict]:
     """Parse the uploaded effort-clocking Excel into a list of dicts."""
+    import pandas as pd
     df: Any = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
 
     # Detect the name column (first column)
@@ -575,9 +576,37 @@ def debug_test_jira():
         return jsonify({"status": "error", "message": str(exc)})
 
 # ---------------------------------------------------------------------------
+# Cache preloading
+# ---------------------------------------------------------------------------
+
+def preload_cache():
+    """Background task to warm cache for current week on startup."""
+    try:
+        time.sleep(2)  # Wait for app to fully start
+        today = datetime.now()
+        start = today - timedelta(days=today.weekday())
+        end = today
+        start_str = start.strftime("%Y-%m-%d")
+        end_str = end.strftime("%Y-%m-%d")
+        
+        logger.info("🔥 Preloading cache for current week (%s to %s)...", start_str, end_str)
+        result = fetch_jira_worklogs(start_str, end_str)
+        cache_key = f"{start_str}_{end_str}"
+        CACHE[cache_key] = {"data": result, "ts": time.time()}
+        logger.info("✅ Cache preload complete! %d records cached.", len(result.get("data", [])))
+    except Exception as exc:
+        logger.error("❌ Cache preload failed: %s", exc)
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    # Start cache preload in background thread
+    if JIRA_EMAIL and JIRA_API_TOKEN:
+        Thread(target=preload_cache, daemon=True).start()
+    else:
+        logger.warning("⚠️  JIRA credentials not set - skipping cache preload")
+    
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     app.run(host="0.0.0.0", port=port, debug=debug)
