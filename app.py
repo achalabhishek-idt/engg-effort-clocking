@@ -45,8 +45,6 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "https://subex.atlassian.net")
-JIRA_EMAIL = os.getenv("JIRA_EMAIL", "")
-JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "") or os.getenv("JIRA_TOKEN", "")
 EXPECTED_HOURS = int(os.getenv("EXPECTED_HOURS", "168"))
 
 # Project categories
@@ -65,8 +63,14 @@ def _jira_headers():
     return {"Accept": "application/json", "Content-Type": "application/json"}
 
 
+def _jira_credentials():
+    email = os.getenv("JIRA_EMAIL", "")
+    token = os.getenv("JIRA_API_TOKEN", "") or os.getenv("JIRA_TOKEN", "")
+    return email, token
+
+
 def _jira_auth():
-    return (JIRA_EMAIL, JIRA_API_TOKEN)
+    return _jira_credentials()
 
 def _fetch_full_worklogs(issue_key):
     """Fetch ALL worklogs for an issue (handles pagination beyond 20)."""
@@ -94,9 +98,11 @@ def _fetch_full_worklogs(issue_key):
 
 def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | None = None):
     """Fetch worklogs from JIRA Cloud REST API within a date range."""
-    if not JIRA_EMAIL or not JIRA_API_TOKEN:
+    jira_email, jira_token = _jira_credentials()
+
+    if not jira_email or not jira_token:
         logger.warning("JIRA credentials not configured (email=%s, token=%s)",
-                       bool(JIRA_EMAIL), bool(JIRA_API_TOKEN))
+                       bool(jira_email), bool(jira_token))
         return {"error": "JIRA credentials not configured. Upload an Excel file instead.", "data": []}
 
     jql_parts = [f'worklogDate >= "{start_date}" AND worklogDate <= "{end_date}"']
@@ -442,7 +448,8 @@ def api_data():
     else:
         logger.info("Cache MISS — fetching from JIRA...")
         result = fetch_jira_worklogs(start_str, end_str)
-        CACHE[cache_key] = {"data": result, "ts": time.time()}
+        if "error" not in result:
+            CACHE[cache_key] = {"data": result, "ts": time.time()}
 
     # Merge with fixed 111-member roster
     if "data" in result:
@@ -492,7 +499,8 @@ def api_data_custom():
     else:
         logger.info("Cache MISS — fetching custom range from JIRA...")
         result = fetch_jira_worklogs(start_str, end_str)
-        CACHE[cache_key] = {"data": result, "ts": time.time()}
+        if "error" not in result:
+            CACHE[cache_key] = {"data": result, "ts": time.time()}
     
     # Merge with roster
     if "data" in result:
@@ -539,10 +547,11 @@ def health():
 @app.route("/api/debug/config")
 def debug_config():
     """Debug endpoint to check if JIRA credentials are loaded."""
+    jira_email, jira_token = _jira_credentials()
     return jsonify({
         "jira_base_url": JIRA_BASE_URL[:30] + "..." if JIRA_BASE_URL else None,
-        "jira_email_set": bool(JIRA_EMAIL),
-        "jira_token_set": bool(JIRA_API_TOKEN),
+        "jira_email_set": bool(jira_email),
+        "jira_token_set": bool(jira_token),
         "expected_hours": EXPECTED_HOURS,
     })
 
@@ -550,7 +559,8 @@ def debug_config():
 @app.route("/api/debug/test-jira")
 def debug_test_jira():
     """Test JIRA connectivity with a simple API call."""
-    if not JIRA_EMAIL or not JIRA_API_TOKEN:
+    jira_email, jira_token = _jira_credentials()
+    if not jira_email or not jira_token:
         return jsonify({"status": "error", "message": "Credentials not set"})
     try:
         resp = requests.get(
@@ -601,8 +611,9 @@ def preload_cache():
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    jira_email, jira_token = _jira_credentials()
     # Start cache preload in background thread
-    if JIRA_EMAIL and JIRA_API_TOKEN:
+    if jira_email and jira_token:
         Thread(target=preload_cache, daemon=True).start()
     else:
         logger.warning("⚠️  JIRA credentials not set - skipping cache preload")
