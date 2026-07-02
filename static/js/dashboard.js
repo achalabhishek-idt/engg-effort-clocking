@@ -751,7 +751,11 @@ function renderAnomalies() {
     const container = document.getElementById("anomalyContainer");
     const metricsData = dashboardData.filter(r => !r.exclude_from_metrics);
     const anomalies = [];
-    
+
+    // Today at midnight (local time) for future-date comparison
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
     // Check for extreme single-day logging (if worklogs available)
     metricsData.forEach(person => {
         if (!person.worklogs || person.worklogs.length === 0) return;
@@ -780,6 +784,14 @@ function renderAnomalies() {
                 anomalies.push(`<strong>${escHtml(person.name)}</strong> logged ${wl.hours}h on ${wl.date} (weekend)`);
             }
         });
+
+        // Check for future-date logging
+        const futureLogs = person.worklogs.filter(wl => wl.date > todayStr);
+        if (futureLogs.length > 0) {
+            const totalFutureHours = futureLogs.reduce((s, wl) => s + wl.hours, 0);
+            const dates = [...new Set(futureLogs.map(wl => wl.date))].sort().join(", ");
+            anomalies.push(`<strong>${escHtml(person.name)}</strong> logged ${totalFutureHours.toFixed(1)}h on future date(s): ${escHtml(dates)} 🔮`);
+        }
     });
     
     if (anomalies.length === 0) {
