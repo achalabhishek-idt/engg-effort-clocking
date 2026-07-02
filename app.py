@@ -423,12 +423,282 @@ def merge_roster_with_worklogs(worklogs: list[dict], expected_override=None) -> 
     return merged
 
 # ---------------------------------------------------------------------------
+# GitHub Copilot metrics (ported from the standalone copilot-dashboard)
+# ---------------------------------------------------------------------------
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+COPILOT_SCOPE = os.getenv("SCOPE", "enterprise").lower()
+GITHUB_ENT = os.getenv("GITHUB_ENT", "")
+GITHUB_ORG = os.getenv("GITHUB_ORG", "")
+GITHUB_API_BASE = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com").rstrip("/")
+COPILOT_CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))
+
+_copilot_cache: dict[str, tuple[float, Any]] = {}
+
+
+class CopilotError(Exception):
+    """Raised for GitHub API / configuration errors; carries an HTTP status."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _copilot_cache_get(key: str):
+    hit = _copilot_cache.get(key)
+    if hit and (time.time() - hit[0]) < COPILOT_CACHE_TTL:
+        return hit[1]
+    return None
+
+
+def _copilot_cache_set(key: str, value: Any):
+    _copilot_cache[key] = (time.time(), value)
+
+
+def _copilot_scope_path() -> str:
+    if COPILOT_SCOPE == "enterprise":
+        if not GITHUB_ENT:
+            raise CopilotError(500, "GITHUB_ENT is not set")
+        return f"/enterprises/{GITHUB_ENT}"
+    if not GITHUB_ORG:
+        raise CopilotError(500, "GITHUB_ORG is not set")
+    return f"/orgs/{GITHUB_ORG}"
+
+
+def _gh_get(path: str, params: dict | None = None, allow_404: bool = False):
+    if not GITHUB_TOKEN:
+        raise CopilotError(500, "GITHUB_TOKEN is not set. Add it to your .env file.")
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    r = requests.get(f"{GITHUB_API_BASE}{path}", headers=headers, params=params, timeout=30)
+    if r.status_code == 401:
+        raise CopilotError(401, "GitHub rejected the token (401). Check the PAT.")
+    if r.status_code == 403:
+        raise CopilotError(403, "Forbidden (403). Token likely lacks metrics scope or SSO authorization.")
+    if r.status_code == 404 and allow_404:
+        return None
+    if r.status_code >= 400:
+        raise CopilotError(r.status_code, f"GitHub API error: {r.text[:300]}")
+    return r.json()
+
+
+def _fetch_report_days(download_links: list[str]) -> list[dict]:
+    """Report metrics are delivered as signed URLs to JSON blobs; fetch them
+    (no auth header — they are pre-signed) and concatenate their day_totals.
+
+    The signed CDN endpoints occasionally drop the connection, so each link is
+    retried a few times. If any link ultimately fails we raise, because a
+    partially-fetched report would silently under-report — better to surface the
+    error than cache incomplete data.
+    """
+    day_totals: list[dict] = []
+    for link in download_links:
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = requests.get(link, timeout=60)
+                resp.raise_for_status()
+                day_totals.extend(resp.json().get("day_totals", []))
+                last_exc = None
+                break
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.warning("Copilot report fetch attempt %d failed: %s", attempt + 1, exc)
+                time.sleep(0.5 * (attempt + 1))
+        if last_exc is not None:
+            raise CopilotError(502, f"Failed to fetch Copilot report data: {last_exc}")
+    return day_totals
+
+
+def _copilot_summarize(raw: list[dict]) -> dict:
+    """Legacy inline /copilot/metrics schema."""
+    days = []
+    for d in raw:
+        ide = d.get("copilot_ide_code_completions") or {}
+        chat = d.get("copilot_ide_chat") or {}
+        suggested = accepted = 0
+        lang_totals: dict[str, dict] = {}
+        for editor in ide.get("editors", []):
+            for model in editor.get("models", []):
+                for lang in model.get("languages", []):
+                    s = lang.get("total_code_suggestions", 0)
+                    a = lang.get("total_code_acceptances", 0)
+                    suggested += s
+                    accepted += a
+                    lt = lang_totals.setdefault(
+                        lang.get("name", "unknown"), {"suggested": 0, "accepted": 0}
+                    )
+                    lt["suggested"] += s
+                    lt["accepted"] += a
+        days.append({
+            "date": d.get("date"),
+            "active_users": d.get("total_active_users", 0),
+            "engaged_users": d.get("total_engaged_users", 0),
+            "suggested": suggested,
+            "accepted": accepted,
+            "chat_users": chat.get("total_engaged_users", 0),
+        })
+        days[-1]["_langs"] = lang_totals
+
+    return _copilot_rollup(days)
+
+
+def _copilot_summarize_report(day_records: list[dict], since: str | None = None,
+                              until: str | None = None) -> dict:
+    """Newer report-based schema (enterprise-28-day / org-28-day)."""
+    by_day: dict[str, dict] = {}
+    for rec in day_records:
+        day = rec.get("day")
+        if not day:
+            continue
+        if since and day < since:
+            continue
+        if until and day > until:
+            continue
+        agg = by_day.setdefault(
+            day,
+            {"date": day, "active_users": 0, "engaged_users": 0,
+             "suggested": 0, "accepted": 0, "chat_users": 0, "_langs": {}},
+        )
+        agg["active_users"] = max(agg["active_users"], rec.get("daily_active_users", 0))
+        agg["engaged_users"] = max(agg["engaged_users"], rec.get("weekly_active_users", 0))
+        agg["chat_users"] = max(agg["chat_users"], rec.get("monthly_active_chat_users", 0))
+        agg["suggested"] += rec.get("code_generation_activity_count", 0)
+        agg["accepted"] += rec.get("code_acceptance_activity_count", 0)
+        for lf in rec.get("totals_by_language_feature", []):
+            lt = agg["_langs"].setdefault(
+                lf.get("language", "unknown"), {"suggested": 0, "accepted": 0}
+            )
+            lt["suggested"] += lf.get("code_generation_activity_count", 0)
+            lt["accepted"] += lf.get("code_acceptance_activity_count", 0)
+
+    days = sorted(by_day.values(), key=lambda d: d["date"])
+    return _copilot_rollup(days)
+
+
+def _copilot_rollup(days: list[dict]) -> dict:
+    """Roll per-day language totals into top languages + summary KPIs."""
+    lang_roll: dict[str, dict] = {}
+    for d in days:
+        for name, v in d.pop("_langs", {}).items():
+            r = lang_roll.setdefault(name, {"suggested": 0, "accepted": 0})
+            r["suggested"] += v["suggested"]
+            r["accepted"] += v["accepted"]
+    top_langs = sorted(
+        (
+            {
+                "name": n,
+                "accepted": v["accepted"],
+                "rate": round(100 * v["accepted"] / v["suggested"], 1) if v["suggested"] else 0,
+            }
+            for n, v in lang_roll.items()
+        ),
+        key=lambda x: x["accepted"],
+        reverse=True,
+    )[:5]
+
+    total_suggested = sum(d["suggested"] for d in days)
+    total_accepted = sum(d["accepted"] for d in days)
+    peak_active = max((d["active_users"] for d in days), default=0)
+
+    return {
+        "scope": COPILOT_SCOPE,
+        "target": GITHUB_ENT if COPILOT_SCOPE == "enterprise" else GITHUB_ORG,
+        "summary": {
+            "peak_active_users": peak_active,
+            "avg_active_users": round(sum(d["active_users"] for d in days) / len(days)) if days else 0,
+            "total_suggested": total_suggested,
+            "total_accepted": total_accepted,
+            "acceptance_rate": round(100 * total_accepted / total_suggested, 1) if total_suggested else 0,
+        },
+        "days": days,
+        "top_languages": top_langs,
+    }
+
+
+def _iso_ts(ts: str) -> float:
+    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @app.route("/")
 def index():
     return render_template("dashboard.html")
+
+
+@app.route("/copilot")
+def copilot_page():
+    return render_template("copilot.html")
+
+
+@app.route("/api/copilot/metrics")
+def copilot_metrics():
+    since = request.args.get("since")
+    until = request.args.get("until")
+    key = f"metrics:{COPILOT_SCOPE}:{since}:{until}"
+    try:
+        cached = _copilot_cache_get(key)
+        if cached:
+            return jsonify(cached)
+        # Newer enterprises/orgs deliver metrics as a downloadable report (the
+        # inline /copilot/metrics endpoint 404s for them). Try that first.
+        report_kind = "enterprise-28-day" if COPILOT_SCOPE == "enterprise" else "org-28-day"
+        report = _gh_get(
+            f"{_copilot_scope_path()}/copilot/metrics/reports/{report_kind}/latest",
+            allow_404=True,
+        )
+        if report and report.get("download_links"):
+            day_records = _fetch_report_days(report["download_links"])
+            result = _copilot_summarize_report(day_records, since, until)
+        else:
+            params = {}
+            if since:
+                params["since"] = since
+            if until:
+                params["until"] = until
+            raw = _gh_get(f"{_copilot_scope_path()}/copilot/metrics", params or None)
+            result = _copilot_summarize(raw if isinstance(raw, list) else [])
+        # Only cache results that actually contain data. An empty payload here
+        # means a transient upstream hiccup (dropped report blob, GitHub still
+        # generating the report); caching it would freeze the dashboard on
+        # "no data" for a full TTL. Leaving it uncached lets the next load retry.
+        if result.get("days"):
+            _copilot_cache_set(key, result)
+        return jsonify(result)
+    except CopilotError as exc:
+        return jsonify({"detail": exc.message}), exc.status
+
+
+@app.route("/api/copilot/seats")
+def copilot_seats():
+    key = f"seats:{COPILOT_SCOPE}"
+    try:
+        cached = _copilot_cache_get(key)
+        if cached:
+            return jsonify(cached)
+        data = _gh_get(f"{_copilot_scope_path()}/copilot/billing/seats", {"per_page": 100})
+        seats = data.get("seats", [])
+        now = time.time()
+        never = sum(1 for s in seats if not s.get("last_activity_at"))
+        inactive7 = sum(
+            1 for s in seats
+            if s.get("last_activity_at") and (now - _iso_ts(s["last_activity_at"])) > 7 * 86400
+        )
+        result = {
+            "total_assigned": data.get("total_seats", len(seats)),
+            "never_used": never,
+            "inactive_7d": inactive7,
+        }
+        _copilot_cache_set(key, result)
+        return jsonify(result)
+    except CopilotError as exc:
+        return jsonify({"detail": exc.message}), exc.status
 
 
 @app.route("/api/data", methods=["GET"])
