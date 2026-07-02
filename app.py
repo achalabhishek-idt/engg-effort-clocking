@@ -105,7 +105,10 @@ def fetch_jira_worklogs(start_date: str, end_date: str, project_keys: list | Non
                        bool(jira_email), bool(jira_token))
         return {"error": "JIRA credentials not configured. Upload an Excel file instead.", "data": []}
 
-    jql_parts = [f'worklogDate >= "{start_date}" AND worklogDate <= "{end_date}"']
+    # Extend fetch window 90 days into the future to catch future-dated worklogs
+    # (people who accidentally log hours on future dates)
+    fetch_end = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=90)).strftime("%Y-%m-%d")
+    jql_parts = [f'worklogDate >= "{start_date}" AND worklogDate <= "{fetch_end}"']
     if project_keys:
         keys = ", ".join(project_keys)
         jql_parts.append(f"project in ({keys})")
@@ -175,10 +178,13 @@ def _transform_worklogs(issues, start_date, end_date):
     """Transform JIRA issues with worklogs into the utilization matrix.
     
     Extracts worklogs from all issues and aggregates by person and project.
+    Worklogs outside [start_date, end_date] (e.g. future-dated) are included
+    in the worklogs list for anomaly detection but NOT counted in utilization.
     """
     records: dict[str, dict] = {}  # person -> {project: hours}
     sd = datetime.strptime(start_date, "%Y-%m-%d")
     ed = datetime.strptime(end_date, "%Y-%m-%d")
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     worklog_count = 0
 
@@ -196,39 +202,52 @@ def _transform_worklogs(issues, start_date, end_date):
             except ValueError:
                 logger.warning("Invalid worklog date: %s", started)
                 continue
-            if not (sd <= wl_date <= ed):
+
+            is_future = wl_date > today
+            in_period = sd <= wl_date <= ed
+
+            # Skip worklogs that are neither in the period nor future-dated
+            if not in_period and not is_future:
                 continue
-            # DEBUG — remove after testing
-            author_dbg = wl.get("author", {}).get("displayName", "")
-            hrs_dbg = wl.get("timeSpentSeconds", 0) / 3600
-            if author_dbg == "Achal Abhishek":
-                logger.info("DEBUG INCLUDED: %s | %s | %.1fh | issue=%s",
-                            author_dbg, started, hrs_dbg, issue_key)
+
             author = wl.get("author", {}).get("displayName", "Unknown")
             author_email = wl.get("author", {}).get("emailAddress", "")
             hours = wl.get("timeSpentSeconds", 0) / 3600
+
+            # DEBUG — remove after testing
+            if author == "Achal Abhishek":
+                logger.info("DEBUG INCLUDED: %s | %s | %.1fh | issue=%s | future=%s",
+                            author, started, hours, issue_key, is_future)
 
             if author not in records:
                 records[author] = {col: 0.0 for col in PROJECT_COLUMNS}
                 records[author]["_email"] = author_email
                 records[author]["_worklogs"] = []
-            
-            # Map project key to column (customer projects, general, or unknown)
+
+            # Map project key to column
             if project_key in PROJECT_COLUMNS:
                 col = project_key
             elif project_key in CUSTOMER_PROJECTS:
                 col = project_key
             else:
                 col = "Customer Projs"  # fallback for unmapped projects
-            
-            records[author][col] = records[author].get(col, 0.0) + hours
+
+            # Only count hours in utilization if worklog falls within the selected period
+            if in_period:
+                records[author][col] = records[author].get(col, 0.0) + hours
+
             records[author]["_worklogs"].append({
                 "project": col,
                 "issue": issue_key,
                 "date": started,
                 "hours": round(hours, 2),
+                "is_future": is_future,
             })
-            logger.debug("Worklog: %s → %s (%s) = %.2f hours", author, issue_key, col, hours)
+            if is_future:
+                logger.warning("FUTURE DATE worklog: %s logged %.1fh on %s (issue=%s)",
+                               author, hours, started, issue_key)
+            else:
+                logger.debug("Worklog: %s → %s (%s) = %.2f hours", author, issue_key, col, hours)
 
     logger.info("Processed %d worklogs for %d unique employees", worklog_count, len(records))
 
