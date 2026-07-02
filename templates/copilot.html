@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Copilot Metrics Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <style>
+    :root { --ok:#00875a; --warn:#ff991f; --bad:#de350b; --brand:#0052cc; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen">
+  <div class="max-w-7xl mx-auto px-6 py-6">
+
+    <!-- Header -->
+    <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div class="flex items-center gap-3">
+        <a href="/" class="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800">← Effort Clocking</a>
+        <span class="relative flex h-3 w-3">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+        </span>
+        <div>
+          <div class="text-xs font-semibold text-green-600 tracking-wide">LIVE</div>
+          <h1 class="text-2xl font-extrabold tracking-tight">Copilot Metrics</h1>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <select id="period" class="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+          <option value="28">Last 28 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="7">Last 7 days</option>
+        </select>
+        <button id="csv" class="rounded-lg bg-[color:var(--brand)] text-white px-3 py-2 text-sm font-medium">Export CSV</button>
+        <button id="theme" class="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm">🌙</button>
+      </div>
+    </header>
+
+    <div id="scopebar" class="mb-4 text-sm text-slate-500 dark:text-slate-400"></div>
+    <div id="error" class="hidden mb-4 rounded-lg bg-red-50 text-red-700 border border-red-200 px-4 py-3 text-sm"></div>
+
+    <!-- KPI tiles -->
+    <section id="kpis" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6"></section>
+
+    <!-- Charts -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Active Users Over Time</h2>
+        <div class="relative h-72"><canvas id="usersChart"></canvas></div>
+      </div>
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Top Languages (accepted)</h2>
+        <div class="relative h-72"><canvas id="langChart"></canvas></div>
+      </div>
+      <div class="lg:col-span-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Suggestions vs Acceptances</h2>
+        <div class="relative h-64"><canvas id="acceptChart"></canvas></div>
+      </div>
+    </section>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s);
+let state = { metrics: null };
+
+function tile(label, value, accent, sub='') {
+  return `<div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-4 border-l-4" style="border-color:${accent}">
+    <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">${label}</div>
+    <div class="text-3xl font-extrabold mt-1">${value}</div>
+    <div class="text-xs text-slate-400 mt-1">${sub}</div>
+  </div>`;
+}
+
+let charts = {};
+function draw(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart($(id), cfg);
+}
+
+async function load() {
+  $('#error').classList.add('hidden');
+  try {
+    const days = $('#period').value;
+    const until = new Date();
+    const since = new Date(Date.now() - days*86400*1000);
+    const iso = d => d.toISOString().slice(0,10);
+    const [m, seats] = await Promise.all([
+      fetch(`/api/copilot/metrics?since=${iso(since)}&until=${iso(until)}`).then(r=>{if(!r.ok)throw r;return r.json()}),
+      fetch('/api/copilot/seats').then(r=>r.ok?r.json():null).catch(()=>null)
+    ]);
+    state.metrics = m;
+    $('#scopebar').textContent = `Displaying data for ${m.scope}: ${m.target}`;
+
+    const s = m.summary;
+    $('#kpis').innerHTML =
+      tile('Peak Active Users', s.peak_active_users, 'var(--brand)') +
+      tile('Avg Active Users', s.avg_active_users, '#6554c0') +
+      tile('Acceptance Rate', s.acceptance_rate + '%', 'var(--ok)', `${s.total_accepted.toLocaleString()} accepted`) +
+      tile('Lines Suggested', s.total_suggested.toLocaleString(), 'var(--warn)') +
+      tile('Assigned Seats', seats ? seats.total_assigned : '—', 'var(--bad)',
+           seats ? `${seats.never_used} never used · ${seats.inactive_7d} inactive 7d` : '');
+
+    const labels = m.days.map(d=>d.date);
+    draw('#usersChart', { type:'line', data:{ labels, datasets:[
+      {label:'Active', data:m.days.map(d=>d.active_users), borderColor:'#0052cc', tension:.3, fill:false},
+      {label:'Engaged', data:m.days.map(d=>d.engaged_users), borderColor:'#6554c0', tension:.3, fill:false}
+    ]}, options:{plugins:{legend:{position:'bottom'}},maintainAspectRatio:false}});
+
+    draw('#langChart', { type:'doughnut', data:{
+      labels:m.top_languages.map(l=>l.name),
+      datasets:[{data:m.top_languages.map(l=>l.accepted),
+        backgroundColor:['#0052cc','#00875a','#ff991f','#6554c0','#de350b']}]
+    }, options:{plugins:{legend:{position:'bottom'}},maintainAspectRatio:false}});
+
+    draw('#acceptChart', { type:'bar', data:{ labels, datasets:[
+      {label:'Suggested', data:m.days.map(d=>d.suggested), backgroundColor:'#b3d4ff'},
+      {label:'Accepted', data:m.days.map(d=>d.accepted), backgroundColor:'#0052cc'}
+    ]}, options:{plugins:{legend:{position:'bottom'}},maintainAspectRatio:false}});
+  } catch (e) {
+    const msg = e.json ? (await e.json()).detail : e.message || 'Failed to load';
+    $('#error').textContent = 'Error: ' + msg;
+    $('#error').classList.remove('hidden');
+  }
+}
+
+$('#period').addEventListener('change', load);
+$('#theme').addEventListener('click', () => {
+  document.documentElement.classList.toggle('dark');
+  $('#theme').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+});
+$('#csv').addEventListener('click', () => {
+  if (!state.metrics) return;
+  const rows = [['date','active_users','engaged_users','suggested','accepted']];
+  state.metrics.days.forEach(d=>rows.push([d.date,d.active_users,d.engaged_users,d.suggested,d.accepted]));
+  const blob = new Blob([rows.map(r=>r.join(',')).join('\n')], {type:'text/csv'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='copilot-metrics.csv'; a.click();
+});
+
+load();
+</script>
+</body>
+</html>
