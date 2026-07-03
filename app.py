@@ -624,6 +624,531 @@ def _iso_ts(ts: str) -> float:
 
 
 # ---------------------------------------------------------------------------
+# ArgoCD deployment metrics (replicates the DevLake Grafana "ArgoCD" dashboard,
+# uid Argocd001). Two data sources, preferred in this order:
+#   1. DevLake MySQL (full deployment archive) — when DEVLAKE_DB_* is set
+#   2. ArgoCD REST API (direct)                — when ARGOCD_API_URL/TOKEN is set
+# Note: ArgoCD's API only retains ~10 revisions per app and successful syncs,
+# so trends/failure rates are shallower there than in DevLake.
+# ---------------------------------------------------------------------------
+ARGOCD_API_URL = os.getenv("ARGOCD_API_URL", "").rstrip("/")
+ARGOCD_TOKEN = os.getenv("ARGOCD_TOKEN", "")
+ARGOCD_VERIFY_SSL = os.getenv("ARGOCD_VERIFY_SSL", "true").lower() != "false"
+# When DNS can't resolve the ArgoCD hostname (hosts-file setups), connect to
+# this IP instead while keeping the hostname in the Host header for routing.
+ARGOCD_RESOLVE_IP = os.getenv("ARGOCD_RESOLVE_IP", "")
+if ARGOCD_API_URL and not ARGOCD_VERIFY_SSL:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+DEVLAKE_DB_HOST = os.getenv("DEVLAKE_DB_HOST", "")
+DEVLAKE_DB_PORT = int(os.getenv("DEVLAKE_DB_PORT", "3306"))
+DEVLAKE_DB_NAME = os.getenv("DEVLAKE_DB_NAME", "lake")
+DEVLAKE_DB_USER = os.getenv("DEVLAKE_DB_USER", "")
+DEVLAKE_DB_PASSWORD = os.getenv("DEVLAKE_DB_PASSWORD", "")
+ARGOCD_CACHE_TTL = int(os.getenv("ARGOCD_CACHE_TTL", "300"))
+
+_argocd_cache: dict[str, tuple[float, Any]] = {}
+
+
+class ArgocdError(Exception):
+    """Raised for DevLake DB / configuration errors; carries an HTTP status."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _argocd_cache_get(key: str):
+    hit = _argocd_cache.get(key)
+    if hit and (time.time() - hit[0]) < ARGOCD_CACHE_TTL:
+        return hit[1]
+    return None
+
+
+def _devlake_connect():
+    if not DEVLAKE_DB_HOST or not DEVLAKE_DB_USER:
+        raise ArgocdError(
+            500,
+            "DevLake DB is not configured. Set DEVLAKE_DB_HOST, DEVLAKE_DB_USER "
+            "and DEVLAKE_DB_PASSWORD in your .env file.",
+        )
+    import pymysql
+    try:
+        return pymysql.connect(
+            host=DEVLAKE_DB_HOST,
+            port=DEVLAKE_DB_PORT,
+            user=DEVLAKE_DB_USER,
+            password=DEVLAKE_DB_PASSWORD,
+            database=DEVLAKE_DB_NAME,
+            cursorclass=pymysql.cursors.DictCursor,
+            connect_timeout=10,
+            read_timeout=60,
+        )
+    except Exception as exc:
+        raise ArgocdError(502, f"Cannot connect to DevLake MySQL: {exc}")
+
+
+def _argocd_json_safe(rows) -> list[dict]:
+    """Convert datetime/Decimal values from MySQL into JSON-friendly types."""
+    from decimal import Decimal
+    out = []
+    for row in rows:
+        clean = {}
+        for k, v in row.items():
+            if isinstance(v, datetime):
+                clean[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+            elif hasattr(v, "isoformat"):  # date
+                clean[k] = v.isoformat()
+            elif isinstance(v, Decimal):
+                clean[k] = float(v)
+            else:
+                clean[k] = v
+        out.append(clean)
+    return out
+
+
+def _argocd_source() -> str:
+    """Pick the data source: DevLake MySQL if configured, else the ArgoCD API."""
+    if DEVLAKE_DB_HOST and DEVLAKE_DB_USER:
+        return "devlake"
+    if ARGOCD_API_URL and ARGOCD_TOKEN:
+        return "argocd-api"
+    raise ArgocdError(
+        500,
+        "No ArgoCD data source configured. Set ARGOCD_API_URL + ARGOCD_TOKEN "
+        "(direct ArgoCD API) or DEVLAKE_DB_* (DevLake MySQL) in .env.",
+    )
+
+
+def _argocd_api_get(path: str, params: dict | None = None):
+    headers = {"Authorization": f"Bearer {ARGOCD_TOKEN}"}
+    url = f"{ARGOCD_API_URL}{path}"
+    if ARGOCD_RESOLVE_IP:
+        from urllib.parse import urlparse
+        host = urlparse(ARGOCD_API_URL).hostname or ""
+        url = url.replace(host, ARGOCD_RESOLVE_IP, 1)
+        headers["Host"] = host
+    try:
+        r = requests.get(url, headers=headers, params=params,
+                         timeout=30, verify=ARGOCD_VERIFY_SSL)
+    except requests.RequestException as exc:
+        raise ArgocdError(502, f"Cannot reach ArgoCD API: {exc}")
+    if r.status_code == 401:
+        raise ArgocdError(401, "ArgoCD rejected the token (401). Check ARGOCD_TOKEN.")
+    if r.status_code == 403:
+        raise ArgocdError(403, "ArgoCD returned 403 Forbidden. The token's account "
+                               "may lack 'applications, get' RBAC permission.")
+    if r.status_code >= 400:
+        raise ArgocdError(r.status_code, f"ArgoCD API error: {r.text[:300]}")
+    return r.json()
+
+
+def _argocd_ts(ts: str | None) -> str:
+    """ArgoCD ISO timestamp → 'YYYY-MM-DD HH:MM:SS' (sortable, JSON-friendly)."""
+    if not ts:
+        return ""
+    return ts.replace("T", " ").replace("Z", "")[:19]
+
+
+def _argocd_api_snapshot() -> dict:
+    """One pass over /v1/applications → flat deployment rows + app metadata.
+
+    ArgoCD's history array holds completed (successful) syncs, capped by each
+    app's revisionHistoryLimit (~10). The latest failed operation is only
+    visible via operationState, so failures beyond the most recent one are
+    not recoverable from the live API.
+    """
+    data = _argocd_api_get("/v1/applications")
+    deployments, apps, app_images = [], [], []
+
+    for item in data.get("items", []):
+        meta = item.get("metadata", {})
+        name = meta.get("name", "?")
+        status = item.get("status", {})
+        env = (item.get("spec", {}).get("destination", {}) or {}).get("namespace", "") or "unknown"
+        apps.append({"id": name, "name": name})
+
+        history = status.get("history") or []
+        for h in history:
+            deployed = _argocd_ts(h.get("deployedAt"))
+            started = _argocd_ts(h.get("deployStartedAt"))
+            duration = None
+            if deployed and started:
+                try:
+                    duration = (datetime.fromisoformat(deployed)
+                                - datetime.fromisoformat(started)).total_seconds()
+                    duration = max(duration, 0)
+                except ValueError:
+                    pass
+            deployments.append({
+                "app": name,
+                "environment": env,
+                "created_date": started or deployed,
+                "finished_date": deployed,
+                "duration_sec": duration,
+                "result": "SUCCESS",
+                "status": "DONE",
+                "revision": (h.get("revision") or "")[:12],
+                "description": f"{name} sync #{h.get('id', '')}".strip(" #"),
+            })
+
+        # The most recent operation can be a failure that history doesn't keep
+        op = status.get("operationState") or {}
+        phase = op.get("phase", "")
+        if phase in ("Failed", "Error"):
+            started = _argocd_ts(op.get("startedAt"))
+            finished = _argocd_ts(op.get("finishedAt"))
+            duration = None
+            if started and finished:
+                try:
+                    duration = max((datetime.fromisoformat(finished)
+                                    - datetime.fromisoformat(started)).total_seconds(), 0)
+                except ValueError:
+                    pass
+            deployments.append({
+                "app": name,
+                "environment": env,
+                "created_date": started or finished,
+                "finished_date": finished,
+                "duration_sec": duration,
+                "result": "FAILURE",
+                "status": phase.upper(),
+                "revision": ((op.get("operation", {}).get("sync", {}) or {}).get("revision") or "")[:12],
+                "description": (op.get("message") or f"{name} failed sync")[:200],
+            })
+
+        images = (status.get("summary", {}) or {}).get("images") or []
+        if images:
+            latest = history[-1] if history else {}
+            app_images.append({
+                "deployment_created": _argocd_ts(latest.get("deployedAt")),
+                "deployment_name": name,
+                "images": ", ".join(images),
+                "revision": (latest.get("revision") or "")[:12],
+                "environment": env,
+                "result": "SUCCESS" if latest else "",
+            })
+
+    return {"deployments": deployments, "apps": apps, "app_images": app_images}
+
+
+def _argocd_fetch_metrics_api(since: str, until_excl: str, apps: list[str]) -> dict:
+    """Aggregate the API snapshot into the same payload shape as the SQL path."""
+    snap = _argocd_api_snapshot()
+    rows = [
+        d for d in snap["deployments"]
+        if d["created_date"]
+        and since <= d["created_date"] < until_excl
+        and (not apps or d["app"] in apps)
+    ]
+    rows.sort(key=lambda d: d["created_date"])
+
+    total = len(rows)
+    successful = sum(1 for d in rows if d["result"] == "SUCCESS")
+    durations = [d["duration_sec"] for d in rows if d["duration_sec"] is not None]
+    summary = {
+        "total": total,
+        "successful": successful,
+        "success_rate": round(successful / total, 4) if total else 0,
+        "mean_duration_min": round(sum(durations) / len(durations) / 60, 2)
+        if durations else None,
+    }
+
+    result_counts: dict[str, int] = {}
+    by_env: dict[str, int] = {}
+    monthly: dict[str, dict] = {}
+    daily: dict[str, list] = {}
+    for d in rows:
+        result_counts[d["result"]] = result_counts.get(d["result"], 0) + 1
+        by_env[d["environment"]] = by_env.get(d["environment"], 0) + 1
+        month = d["created_date"][:7] + "-01"
+        m = monthly.setdefault(month, {"month": month, "deployments": 0,
+                                       "successes": 0, "durs": []})
+        m["deployments"] += 1
+        m["successes"] += d["result"] == "SUCCESS"
+        if d["duration_sec"] is not None:
+            m["durs"].append(d["duration_sec"])
+        if d["duration_sec"] is not None:
+            daily.setdefault(d["created_date"][:10], []).append(d["duration_sec"])
+
+    monthly_rows = []
+    for month in sorted(monthly):
+        m = monthly[month]
+        monthly_rows.append({
+            "month": month,
+            "deployments": m["deployments"],
+            "success_rate": round(m["successes"] / m["deployments"], 4),
+            "mean_duration_min": round(sum(m["durs"]) / len(m["durs"]) / 60, 2)
+            if m["durs"] else None,
+        })
+
+    # 7-day rolling average over daily means (row-based, like the SQL window)
+    day_means = [(day, sum(v) / len(v) / 60) for day, v in sorted(daily.items())]
+    rolling = []
+    for i, (day, _) in enumerate(day_means):
+        window = [v for _, v in day_means[max(0, i - 6):i + 1]]
+        rolling.append({"day": day, "rolling_avg_minutes": round(sum(window) / len(window), 2)})
+
+    def table_row(d):
+        return {
+            "created_date": d["created_date"],
+            "deployment_name": d["app"],
+            "environment": d["environment"],
+            "result": d["result"],
+            "status": d["status"],
+            "description": d["description"],
+            "finished_date": d["finished_date"],
+            "duration_minutes": round(d["duration_sec"] / 60, 2)
+            if d["duration_sec"] is not None else None,
+        }
+
+    longest = sorted((d for d in rows if d["duration_sec"] is not None),
+                     key=lambda d: d["duration_sec"], reverse=True)[:20]
+    recent = sorted(rows, key=lambda d: d["created_date"], reverse=True)[:50]
+
+    app_filter = set(apps) if apps else None
+    recent_images = [r for r in snap["app_images"]
+                     if not app_filter or r["deployment_name"] in app_filter][:50]
+    image_counts: dict[str, int] = {}
+    for r in rows:
+        img = next((a["images"] for a in snap["app_images"]
+                    if a["deployment_name"] == r["app"]), None)
+        if img:
+            image_counts[img] = image_counts.get(img, 0) + 1
+    top_image_arrays = [{"image_array": k, "deployment_count": v}
+                        for k, v in sorted(image_counts.items(),
+                                           key=lambda kv: kv[1], reverse=True)[:20]]
+
+    return {
+        "since": since,
+        "until": until_excl,
+        "summary": summary,
+        "result_distribution": [{"result": k, "deployment_count": v}
+                                for k, v in sorted(result_counts.items(),
+                                                   key=lambda kv: kv[1], reverse=True)],
+        "monthly": monthly_rows,
+        "by_environment": [{"environment": k, "deployment_count": v}
+                           for k, v in sorted(by_env.items(),
+                                              key=lambda kv: kv[1], reverse=True)],
+        "longest": [table_row(d) for d in longest],
+        "rolling_duration": rolling,
+        "recent": [table_row(d) for d in recent],
+        "recent_images": recent_images,
+        "top_image_arrays": top_image_arrays,
+    }
+
+
+def _argocd_fetch_metrics(since: str, until: str, apps: list[str]) -> dict:
+    """Run the dashboard's panel queries against DevLake and bundle the results.
+
+    `apps` is a list of cicd_scope_id values (empty = all applications), matching
+    the Grafana dashboard's Application template variable.
+    """
+    scope_sql, scope_args = "", []
+    if apps:
+        placeholders = ",".join(["%s"] * len(apps))
+        scope_sql = f" AND cicd_scope_id IN ({placeholders})"
+        scope_args = apps
+
+    # $__timeFilter(created_date) equivalent (until is exclusive next-day bound)
+    time_args = [since, until]
+    base_where = f"created_date >= %s AND created_date < %s{scope_sql}"
+    args = time_args + scope_args
+
+    conn = _devlake_connect()
+    try:
+        with conn.cursor() as cur:
+            # Panels 1.1–1.3 + 3.1: headline stats
+            cur.execute(
+                f"""
+                SELECT
+                  count(DISTINCT id) AS total,
+                  count(DISTINCT CASE WHEN result = 'SUCCESS' THEN id END) AS successful,
+                  avg(CASE WHEN duration_sec IS NOT NULL THEN duration_sec / 60 END) AS mean_duration_min
+                FROM cicd_deployments
+                WHERE {base_where}
+                """,
+                args,
+            )
+            s = cur.fetchone() or {}
+            total = s.get("total") or 0
+            successful = s.get("successful") or 0
+            summary = {
+                "total": total,
+                "successful": successful,
+                "success_rate": round(successful / total, 4) if total else 0,
+                "mean_duration_min": round(float(s["mean_duration_min"]), 2)
+                if s.get("mean_duration_min") is not None else None,
+            }
+
+            # Panel 1.4: result distribution
+            cur.execute(
+                f"""
+                SELECT result, count(DISTINCT id) AS deployment_count
+                FROM cicd_deployments
+                WHERE {base_where}
+                GROUP BY 1 ORDER BY 2 DESC
+                """,
+                args,
+            )
+            result_distribution = _argocd_json_safe(cur.fetchall())
+
+            # Panels 2.1, 2.2, 3.2: monthly deployments / success rate / duration
+            cur.execute(
+                f"""
+                SELECT
+                  DATE_FORMAT(created_date, '%%Y-%%m-01') AS month,
+                  count(DISTINCT id) AS deployments,
+                  1.0 * count(DISTINCT CASE WHEN result = 'SUCCESS' THEN id END)
+                      / count(DISTINCT id) AS success_rate,
+                  avg(CASE WHEN duration_sec IS NOT NULL THEN duration_sec / 60 END)
+                      AS mean_duration_min
+                FROM cicd_deployments
+                WHERE {base_where}
+                GROUP BY 1 ORDER BY 1
+                """,
+                args,
+            )
+            monthly = _argocd_json_safe(cur.fetchall())
+
+            # Panel 2.3: deployments by environment
+            cur.execute(
+                f"""
+                SELECT environment, count(DISTINCT id) AS deployment_count
+                FROM cicd_deployments
+                WHERE {base_where}
+                GROUP BY 1 ORDER BY 2 DESC
+                """,
+                args,
+            )
+            by_environment = _argocd_json_safe(cur.fetchall())
+
+            # Panel 3.3: top 20 longest deployments
+            cur.execute(
+                f"""
+                SELECT
+                  name AS deployment_name,
+                  display_title AS description,
+                  environment, result,
+                  round(duration_sec / 60, 2) AS duration_minutes,
+                  finished_date
+                FROM cicd_deployments
+                WHERE {base_where} AND duration_sec IS NOT NULL
+                ORDER BY duration_sec DESC
+                LIMIT 20
+                """,
+                args,
+            )
+            longest = _argocd_json_safe(cur.fetchall())
+
+            # Panel 3.4: 7-day rolling average of deployment duration
+            cur.execute(
+                f"""
+                WITH daily AS (
+                  SELECT
+                    DATE(created_date) AS day_bucket,
+                    avg(duration_sec / 60) AS avg_duration_minutes
+                  FROM cicd_deployments
+                  WHERE {base_where} AND duration_sec IS NOT NULL
+                  GROUP BY 1
+                )
+                SELECT
+                  day_bucket AS day,
+                  avg(avg_duration_minutes) OVER (
+                    ORDER BY day_bucket ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+                  ) AS rolling_avg_minutes
+                FROM daily
+                ORDER BY day_bucket
+                """,
+                args,
+            )
+            rolling_duration = _argocd_json_safe(cur.fetchall())
+
+            # Panel 4.1: recent deployments
+            cur.execute(
+                f"""
+                SELECT
+                  created_date,
+                  name AS deployment_name,
+                  environment, result, status,
+                  display_title AS description,
+                  finished_date
+                FROM cicd_deployments
+                WHERE {base_where}
+                ORDER BY created_date DESC
+                LIMIT 50
+                """,
+                args,
+            )
+            recent = _argocd_json_safe(cur.fetchall())
+
+            # Panels 5.1 / 5.2 need the ArgoCD plugin's revision-images table,
+            # which may not exist on older DevLake versions — degrade gracefully.
+            recent_images, top_image_arrays = [], []
+            joined_where = base_where.replace("created_date", "d.created_date") \
+                                     .replace("cicd_scope_id", "d.cicd_scope_id")
+            try:
+                cur.execute(
+                    f"""
+                    SELECT
+                      d.created_date AS deployment_created,
+                      d.name AS deployment_name,
+                      ri.images AS images,
+                      c.commit_sha AS revision,
+                      d.environment, d.result
+                    FROM cicd_deployments d
+                    LEFT JOIN cicd_deployment_commits c ON c.cicd_deployment_id = d.id
+                    LEFT JOIN _tool_argocd_revision_images ri ON ri.revision = c.commit_sha
+                    WHERE {joined_where}
+                    ORDER BY d.created_date DESC
+                    LIMIT 50
+                    """,
+                    args,
+                )
+                recent_images = _argocd_json_safe(cur.fetchall())
+
+                cur.execute(
+                    f"""
+                    WITH dep AS (
+                      SELECT d.id, c.commit_sha
+                      FROM cicd_deployments d
+                      LEFT JOIN cicd_deployment_commits c ON c.cicd_deployment_id = d.id
+                      WHERE {joined_where}
+                    )
+                    SELECT ri.images AS image_array,
+                           count(DISTINCT dep.id) AS deployment_count
+                    FROM dep
+                    JOIN _tool_argocd_revision_images ri ON ri.revision = dep.commit_sha
+                    GROUP BY 1 ORDER BY 2 DESC
+                    LIMIT 20
+                    """,
+                    args,
+                )
+                top_image_arrays = _argocd_json_safe(cur.fetchall())
+            except Exception as exc:
+                logger.warning("ArgoCD image panels unavailable: %s", exc)
+
+    finally:
+        conn.close()
+
+    return {
+        "since": since,
+        "until": until,
+        "summary": summary,
+        "result_distribution": result_distribution,
+        "monthly": monthly,
+        "by_environment": by_environment,
+        "longest": longest,
+        "rolling_duration": rolling_duration,
+        "recent": recent,
+        "recent_images": recent_images,
+        "top_image_arrays": top_image_arrays,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -635,6 +1160,71 @@ def index():
 @app.route("/copilot")
 def copilot_page():
     return render_template("copilot.html")
+
+
+@app.route("/argocd")
+def argocd_page():
+    return render_template("argocd.html")
+
+
+@app.route("/api/argocd/applications")
+def argocd_applications():
+    """ArgoCD applications for the filter dropdown (Grafana's Application variable)."""
+    try:
+        cached = _argocd_cache_get("apps")
+        if cached:
+            return jsonify(cached)
+        if _argocd_source() == "devlake":
+            conn = _devlake_connect()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, name FROM cicd_scopes "
+                        "WHERE id LIKE 'argocd:ArgocdApplication:%' ORDER BY name"
+                    )
+                    result = {"applications": _argocd_json_safe(cur.fetchall())}
+            finally:
+                conn.close()
+        else:
+            apps = _argocd_api_snapshot()["apps"]
+            result = {"applications": sorted(apps, key=lambda a: a["name"])}
+        _argocd_cache["apps"] = (time.time(), result)
+        return jsonify(result)
+    except ArgocdError as exc:
+        return jsonify({"detail": exc.message}), exc.status
+
+
+@app.route("/api/argocd/metrics")
+def argocd_metrics():
+    """All panel data for the ArgoCD dashboard in one payload."""
+    until = request.args.get("until") or datetime.now().strftime("%Y-%m-%d")
+    since = request.args.get("since") or (
+        datetime.now() - timedelta(days=182)).strftime("%Y-%m-%d")
+    apps = [a for a in (request.args.get("apps") or "").split(",") if a]
+
+    try:
+        datetime.strptime(since, "%Y-%m-%d")
+        until_excl = (datetime.strptime(until, "%Y-%m-%d")
+                      + timedelta(days=1)).strftime("%Y-%m-%d")
+    except ValueError:
+        return jsonify({"detail": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+    key = f"argocd:{since}:{until}:{','.join(sorted(apps))}"
+    try:
+        cached = _argocd_cache_get(key)
+        if cached:
+            return jsonify(cached)
+        source = _argocd_source()
+        if source == "devlake":
+            result = _argocd_fetch_metrics(since, until_excl, apps)
+        else:
+            result = _argocd_fetch_metrics_api(since, until_excl, apps)
+        result["until"] = until
+        result["source"] = source
+        _argocd_cache[key] = (time.time(), result)
+        return jsonify(result)
+    except ArgocdError as exc:
+        return jsonify({"detail": exc.message}), exc.status
 
 
 @app.route("/api/copilot/metrics")

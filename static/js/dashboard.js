@@ -747,66 +747,127 @@ function renderAlerts() {
 }
 
 // G: Anomaly Detection
+const JIRA_BROWSE_URL = "https://subex.atlassian.net/browse/";
+
+function anomalyIssuesCell(issueHours) {
+    // issueHours: {issueKey: hours} → clickable links, biggest first, cap at 4
+    const items = Object.entries(issueHours).sort((a, b) => b[1] - a[1]);
+    const shown = items.slice(0, 4).map(([key, h]) =>
+        `<a href="${JIRA_BROWSE_URL}${encodeURIComponent(key)}" target="_blank" rel="noopener"
+            class="anomaly-issue-link">${escHtml(key)}</a> <span class="anomaly-issue-hours">(${h.toFixed(1).replace(/\.0$/, "")}h)</span>`);
+    let html = shown.join(", ");
+    if (items.length > 4) {
+        const rest = items.slice(4).map(([key, h]) => `${key} (${h.toFixed(1)}h)`).join(", ");
+        html += ` <span class="anomaly-issue-more" title="${escHtml(rest)}">+${items.length - 4} more</span>`;
+    }
+    return html;
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+let anomalyState = { rows: [], filter: "all" };
+
 function renderAnomalies() {
-    const container = document.getElementById("anomalyContainer");
     const metricsData = dashboardData.filter(r => !r.exclude_from_metrics);
-    const anomalies = [];
+    const rows = [];  // {name, date, weekday, hours, projects, issues, type, cls, rank}
 
     // Today at midnight (local time) for future-date comparison
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    // Check for extreme single-day logging (if worklogs available)
     metricsData.forEach(person => {
         if (!person.worklogs || person.worklogs.length === 0) return;
-        
-        // Group by date
-        const dailyHours = {};
+
+        // Group hours + issue/project breakdown by date (one row per person+day)
+        const daily = {};
         person.worklogs.forEach(wl => {
-            const date = wl.date;
-            dailyHours[date] = (dailyHours[date] || 0) + wl.hours;
-        });
-        
-        // Flag days with >12 hours
-        Object.entries(dailyHours).forEach(([date, hours]) => {
-            if (hours > 12) {
-                anomalies.push(`<strong>${escHtml(person.name)}</strong> logged ${hours.toFixed(1)}h on ${date}`);
-            }
-        });
-        
-        // Check for weekend logging
-        person.worklogs.forEach(wl => {
-            // Parse date in local timezone to avoid day shifting
-            const [year, month, day] = wl.date.split('-').map(Number);
-            const date = new Date(year, month - 1, day);
-            const dayOfWeek = date.getDay();
-            if (dayOfWeek === 0 || dayOfWeek === 6) {  // Sunday or Saturday
-                anomalies.push(`<strong>${escHtml(person.name)}</strong> logged ${wl.hours}h on ${wl.date} (weekend)`);
-            }
+            const d = daily[wl.date] || (daily[wl.date] = { hours: 0, issues: {}, projects: new Set() });
+            d.hours += wl.hours;
+            const key = wl.issue || "?";
+            d.issues[key] = (d.issues[key] || 0) + wl.hours;
+            if (wl.project) d.projects.add(wl.project);
         });
 
-        // Check for future-date logging
-        const futureLogs = person.worklogs.filter(wl => wl.date > todayStr);
-        if (futureLogs.length > 0) {
-            const totalFutureHours = futureLogs.reduce((s, wl) => s + wl.hours, 0);
-            const dates = [...new Set(futureLogs.map(wl => wl.date))].sort().join(", ");
-            anomalies.push(`<strong>${escHtml(person.name)}</strong> logged ${totalFutureHours.toFixed(1)}h on future date(s): ${escHtml(dates)} 🔮`);
-        }
+        Object.entries(daily).forEach(([date, d]) => {
+            // Parse date in local timezone to avoid day shifting
+            const [year, month, day] = date.split('-').map(Number);
+            const dayOfWeek = new Date(year, month - 1, day).getDay();
+            const base = {
+                name: person.name, date, weekday: WEEKDAYS[dayOfWeek], hours: d.hours,
+                projects: [...d.projects].sort().join(", "), issues: d.issues,
+            };
+            if (date > todayStr) {
+                rows.push({ ...base, type: "FUTURE-DATED LOG", cls: "future", rank: 0 });
+                return;  // a future day is reported once, not double-flagged
+            }
+            if (d.hours >= 15) {
+                rows.push({ ...base, type: "HIGH: ≥15h single day", cls: "high", rank: 1 });
+            }
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                rows.push({ ...base, type: "WEEKEND LOG", cls: "weekend", rank: 2 });
+            }
+        });
     });
-    
-    if (anomalies.length === 0) {
+
+    // Future-dated first, then by hours (highest first)
+    rows.sort((a, b) => a.rank - b.rank || b.hours - a.hours || a.date.localeCompare(b.date));
+    anomalyState.rows = rows;
+    if (!rows.some(r => r.cls === anomalyState.filter)) anomalyState.filter = "all";
+    renderAnomalyTable();
+}
+
+function renderAnomalyTable() {
+    const container = document.getElementById("anomalyContainer");
+    const { rows, filter } = anomalyState;
+
+    if (rows.length === 0) {
         container.innerHTML = '<div class="anomaly-empty">✅ No anomalies detected</div>';
         return;
     }
-    
-    let html = "";
-    anomalies.slice(0, 10).forEach(anomaly => {
-        html += `<div class="anomaly-item">${anomaly}</div>`;
-    });
-    if (anomalies.length > 10) {
-        html += `<div class="anomaly-item">...and ${anomalies.length - 10} more anomalies</div>`;
-    }
-    container.innerHTML = html;
+
+    const counts = { all: rows.length, future: 0, high: 0, weekend: 0 };
+    rows.forEach(r => counts[r.cls]++);
+    const chip = (key, label) => counts[key] === 0 && key !== "all" ? "" :
+        `<button class="anomaly-chip ${filter === key ? 'active' : ''}" data-filter="${key}">${label} (${counts[key]})</button>`;
+
+    const visible = filter === "all" ? rows : rows.filter(r => r.cls === filter);
+
+    container.innerHTML = `
+        <div class="anomaly-chips">
+            ${chip("all", "All")}${chip("future", "🔮 Future-dated")}${chip("high", "🔥 ≥15h day")}${chip("weekend", "📅 Weekend")}
+        </div>
+        <div class="anomaly-table-wrap">
+            <table class="anomaly-table">
+                <thead>
+                    <tr><th>Person</th><th>Date</th><th class="num">Hours (day)</th><th>Project</th><th>Jira Issues</th><th>Anomaly Type</th></tr>
+                </thead>
+                <tbody>
+                    ${visible.map(r => `<tr>
+                        <td><button class="anomaly-person" data-name="${escHtml(r.name)}" title="Open worklog breakdown">${escHtml(r.name)}</button></td>
+                        <td>${escHtml(r.date)} <span class="anomaly-weekday ${r.cls === 'weekend' ? 'is-weekend' : ''}">${r.weekday}</span></td>
+                        <td class="num${r.hours >= 15 ? ' anomaly-hours-high' : ''}">${r.hours.toFixed(1).replace(/\.0$/, "")}</td>
+                        <td>${escHtml(r.projects)}</td>
+                        <td class="anomaly-issues">${anomalyIssuesCell(r.issues)}</td>
+                        <td><span class="anomaly-badge anomaly-badge-${r.cls}">${escHtml(r.type)}</span></td>
+                    </tr>`).join("")}
+                </tbody>
+            </table>
+        </div>
+        <div class="anomaly-count">${visible.length} of ${rows.length} anomalies shown</div>`;
+
+    // One delegated handler (re-assigned each render, so it never stacks)
+    container.onclick = (e) => {
+        const chipBtn = e.target.closest(".anomaly-chip");
+        if (chipBtn) {
+            anomalyState.filter = chipBtn.dataset.filter;
+            renderAnomalyTable();
+            return;
+        }
+        const personBtn = e.target.closest(".anomaly-person");
+        if (personBtn) {
+            const employee = dashboardData.find(r => r.name === personBtn.dataset.name);
+            if (employee) showEmployeeDrilldown(employee);
+        }
+    };
 }
 
 // I: Project Health Dashboard

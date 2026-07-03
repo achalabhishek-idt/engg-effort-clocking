@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ArgoCD Deployments Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <style>
+    :root { --ok:#00875a; --warn:#b65c00; --bad:#de350b; --brand:#0052cc; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .tbl th { text-align:left; font-weight:600; padding:.5rem .75rem; white-space:nowrap; }
+    .tbl td { padding:.4rem .75rem; white-space:nowrap; }
+    .tbl tbody tr { border-top:1px solid rgba(148,163,184,.2); }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen">
+  <div class="max-w-7xl mx-auto px-6 py-6">
+
+    <!-- Header -->
+    <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div class="flex items-center gap-3">
+        <a href="/" class="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800">← Effort Clocking</a>
+        <span class="relative flex h-3 w-3">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+        </span>
+        <div>
+          <div class="text-xs font-semibold text-green-600 tracking-wide">LIVE · DEVLAKE</div>
+          <h1 class="text-2xl font-extrabold tracking-tight">ArgoCD Deployments</h1>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <select id="app" aria-label="Filter by application" title="Filter by application" class="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm max-w-[16rem]">
+          <option value="">All applications</option>
+        </select>
+        <select id="range" aria-label="Time range" title="Time range" class="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 3 months</option>
+          <option value="182" selected>Last 6 months</option>
+          <option value="365">Last 12 months</option>
+        </select>
+        <button id="csv" type="button" class="rounded-lg bg-[color:var(--brand)] text-white px-3 py-2 text-sm font-medium">Export CSV</button>
+        <button id="theme" type="button" aria-label="Toggle dark mode" class="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm">🌙</button>
+      </div>
+    </header>
+
+    <div id="scopebar" class="mb-4 text-sm text-slate-500 dark:text-slate-400"></div>
+    <div id="error" class="hidden mb-4 rounded-lg bg-red-50 text-red-700 border border-red-200 px-4 py-3 text-sm"></div>
+    <div id="loading" class="mb-4 text-sm text-slate-500 dark:text-slate-400">Loading deployment data…</div>
+
+    <!-- 1. KPI tiles -->
+    <section id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"></section>
+
+    <!-- 1.4 + 2.x Trends -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Deployment Result Distribution</h2>
+        <div class="relative h-64"><canvas id="resultChart"></canvas></div>
+      </div>
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Deployments per Month</h2>
+        <div class="relative h-64"><canvas id="monthChart"></canvas></div>
+      </div>
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Deployment Success Rate by Month</h2>
+        <div class="relative h-64"><canvas id="rateChart"></canvas></div>
+      </div>
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Deployments by Environment</h2>
+        <div class="relative h-64"><canvas id="envChart"></canvas></div>
+      </div>
+      <div class="lg:col-span-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+        <h2 class="font-semibold mb-3">Mean Deployment Duration by Month <span class="text-xs font-normal text-slate-400">(minutes)</span></h2>
+        <div class="relative h-64"><canvas id="durChart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- 3.4 Rolling duration -->
+    <section class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5 mb-6">
+      <h2 class="font-semibold mb-3">Rolling Deployment Duration <span class="text-xs font-normal text-slate-400">(7-day average, minutes)</span></h2>
+      <div class="relative h-64"><canvas id="rollChart"></canvas></div>
+    </section>
+
+    <!-- 3.3 + 4.1 Tables -->
+    <section class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5 overflow-hidden">
+        <h2 class="font-semibold mb-3">Top 20 Longest Deployments</h2>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto"><table class="tbl w-full text-sm" id="longestTbl"></table></div>
+      </div>
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5 overflow-hidden">
+        <h2 class="font-semibold mb-3">Recent Deployments <span class="text-xs font-normal text-slate-400">(latest 50)</span></h2>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto"><table class="tbl w-full text-sm" id="recentTbl"></table></div>
+      </div>
+    </section>
+
+    <!-- 5. Images -->
+    <section id="imagesSection" class="hidden grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5 overflow-hidden">
+        <h2 class="font-semibold mb-3">Recent Deployment Images</h2>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto"><table class="tbl w-full text-sm" id="imagesTbl"></table></div>
+      </div>
+      <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5 overflow-hidden">
+        <h2 class="font-semibold mb-3">Top Image Arrays <span class="text-xs font-normal text-slate-400">(by deployment count)</span></h2>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto"><table class="tbl w-full text-sm" id="imageArrTbl"></table></div>
+      </div>
+    </section>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s);
+let state = { data: null, apps: [] };
+
+/* Validated categorical palettes (light / dark surface) */
+const PALETTE = {
+  light: ['#0052cc', '#00875a', '#b65c00', '#6554c0', '#de350b'],
+  dark:  ['#3d87e8', '#21a377', '#cf7513', '#8a78e0', '#e05252'],
+};
+const isDark = () => document.documentElement.classList.contains('dark');
+const pal = () => PALETTE[isDark() ? 'dark' : 'light'];
+const inkColor  = () => isDark() ? '#cbd5e1' : '#475569';
+const gridColor = () => isDark() ? 'rgba(148,163,184,.15)' : 'rgba(100,116,139,.15)';
+
+/* Result → status color: never color-alone; the label text always shows too */
+function resultColor(result) {
+  const p = pal();
+  switch ((result || '').toUpperCase()) {
+    case 'SUCCESS': return p[1];
+    case 'FAILURE': case 'FAILED': case 'ERROR': return p[4];
+    case 'ABORT': case 'ABORTED': case 'STOPPED': return p[2];
+    case 'IN_PROGRESS': case 'RUNNING': return p[0];
+    default: return p[3];
+  }
+}
+
+function tile(label, value, accent, sub='') {
+  return `<div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-4 border-l-4" style="border-color:${accent}">
+    <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">${label}</div>
+    <div class="text-3xl font-extrabold mt-1">${value}</div>
+    <div class="text-xs text-slate-400 mt-1">${sub}</div>
+  </div>`;
+}
+
+let charts = {};
+function draw(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  cfg.options = cfg.options || {};
+  cfg.options.maintainAspectRatio = false;
+  charts[id] = new Chart($(id), cfg);
+}
+
+const fmtMonth = m => new Date(m + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+const fmtNum = (v, d=1) => v == null ? '—' : Number(v).toFixed(d);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function badge(result) {
+  return `<span class="inline-flex items-center gap-1.5 font-medium">
+    <span class="inline-block w-2 h-2 rounded-full" style="background:${resultColor(result)}"></span>${esc(result || '—')}</span>`;
+}
+
+function tableHTML(id, headers, rows) {
+  $(id).innerHTML =
+    `<thead class="text-slate-500 dark:text-slate-400 text-xs uppercase sticky top-0 bg-white dark:bg-slate-800"><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>` +
+    `<tbody>${rows.length ? rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${headers.length}" class="text-slate-400 py-4">No data in this period</td></tr>`}</tbody>`;
+}
+
+function axisOpts(extra = {}) {
+  return Object.assign({
+    ticks: { color: inkColor() },
+    grid: { color: gridColor() },
+    border: { display: false },
+  }, extra);
+}
+
+function render() {
+  const m = state.data;
+  if (!m) return;
+  const p = pal();
+  const s = m.summary;
+
+  $('#kpis').innerHTML =
+    tile('Total Deployments', s.total.toLocaleString(), p[0]) +
+    tile('Successful Deployments', s.successful.toLocaleString(), p[1]) +
+    tile('Success Rate', s.total ? (100 * s.success_rate).toFixed(1) + '%' : '—', p[3]) +
+    tile('Mean Duration', s.mean_duration_min != null ? fmtNum(s.mean_duration_min) + ' min' : '—', p[2]);
+
+  // 1.4 Result distribution
+  draw('#resultChart', { type: 'doughnut', data: {
+    labels: m.result_distribution.map(r => r.result || 'UNKNOWN'),
+    datasets: [{ data: m.result_distribution.map(r => r.deployment_count),
+      backgroundColor: m.result_distribution.map(r => resultColor(r.result)),
+      borderColor: isDark() ? '#1e293b' : '#ffffff', borderWidth: 2 }]
+  }, options: { plugins: { legend: { position: 'bottom', labels: { color: inkColor() } } } } });
+
+  // 2.1 Deployments per month (single series → no legend)
+  const months = m.monthly.map(r => fmtMonth(r.month));
+  draw('#monthChart', { type: 'bar', data: { labels: months,
+    datasets: [{ label: 'Deployments', data: m.monthly.map(r => r.deployments),
+      backgroundColor: p[0], borderRadius: 4 }] },
+    options: { plugins: { legend: { display: false } },
+      scales: { x: axisOpts({ grid: { display: false } }), y: axisOpts({ beginAtZero: true }) } } });
+
+  // 2.2 Success rate by month
+  draw('#rateChart', { type: 'bar', data: { labels: months,
+    datasets: [{ label: 'Success rate', data: m.monthly.map(r => 100 * (r.success_rate ?? 0)),
+      backgroundColor: p[1], borderRadius: 4 }] },
+    options: { plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => c.parsed.y.toFixed(1) + '%' } } },
+      scales: { x: axisOpts({ grid: { display: false } }),
+        y: axisOpts({ min: 0, max: 100, ticks: { color: inkColor(), callback: v => v + '%' } }) } } });
+
+  // 2.3 Deployments by environment (horizontal)
+  draw('#envChart', { type: 'bar', data: {
+    labels: m.by_environment.map(r => r.environment || 'UNKNOWN'),
+    datasets: [{ label: 'Deployments', data: m.by_environment.map(r => r.deployment_count),
+      backgroundColor: p[3], borderRadius: 4 }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } },
+      scales: { x: axisOpts({ beginAtZero: true }), y: axisOpts({ grid: { display: false } }) } } });
+
+  // 3.2 Mean duration by month
+  draw('#durChart', { type: 'bar', data: { labels: months,
+    datasets: [{ label: 'Mean duration (min)', data: m.monthly.map(r => r.mean_duration_min),
+      backgroundColor: p[2], borderRadius: 4 }] },
+    options: { plugins: { legend: { display: false } },
+      scales: { x: axisOpts({ grid: { display: false } }), y: axisOpts({ beginAtZero: true }) } } });
+
+  // 3.4 Rolling 7-day duration
+  draw('#rollChart', { type: 'line', data: {
+    labels: m.rolling_duration.map(r => r.day),
+    datasets: [{ label: '7-day avg (min)', data: m.rolling_duration.map(r => r.rolling_avg_minutes),
+      borderColor: p[0], borderWidth: 2, pointRadius: 0, pointHitRadius: 8, tension: .3, fill: false }] },
+    options: { interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false } },
+      scales: { x: axisOpts({ grid: { display: false }, ticks: { color: inkColor(), maxTicksLimit: 12 } }),
+        y: axisOpts({ beginAtZero: true }) } } });
+
+  // 3.3 Longest deployments
+  tableHTML('#longestTbl',
+    ['Deployment', 'Description', 'Environment', 'Result', 'Duration (min)', 'Finished'],
+    m.longest.map(r => [esc(r.deployment_name), esc(r.description), esc(r.environment),
+      badge(r.result), fmtNum(r.duration_minutes), esc(r.finished_date)]));
+
+  // 4.1 Recent deployments
+  tableHTML('#recentTbl',
+    ['Created', 'Deployment', 'Environment', 'Result', 'Status', 'Description'],
+    m.recent.map(r => [esc(r.created_date), esc(r.deployment_name), esc(r.environment),
+      badge(r.result), esc(r.status), esc(r.description)]));
+
+  // 5.x Images (only when the ArgoCD revision-images table has data)
+  const hasImages = (m.recent_images || []).some(r => r.images) || (m.top_image_arrays || []).length;
+  $('#imagesSection').classList.toggle('hidden', !hasImages);
+  if (hasImages) {
+    tableHTML('#imagesTbl',
+      ['Created', 'Deployment', 'Images', 'Revision', 'Environment', 'Result'],
+      m.recent_images.map(r => [esc(r.deployment_created), esc(r.deployment_name),
+        `<span class="whitespace-normal break-all">${esc(r.images)}</span>`,
+        esc((r.revision || '').slice(0, 10)), esc(r.environment), badge(r.result)]));
+    tableHTML('#imageArrTbl', ['Image Array', 'Deployments'],
+      m.top_image_arrays.map(r => [`<span class="whitespace-normal break-all">${esc(r.image_array)}</span>`,
+        r.deployment_count]));
+  }
+}
+
+async function loadApps() {
+  try {
+    const r = await fetch('/api/argocd/applications');
+    if (!r.ok) return;
+    const j = await r.json();
+    state.apps = j.applications || [];
+    $('#app').innerHTML = '<option value="">All applications</option>' +
+      state.apps.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  } catch (e) { /* dropdown stays on "All" */ }
+}
+
+async function load() {
+  $('#error').classList.add('hidden');
+  $('#loading').classList.remove('hidden');
+  try {
+    const days = $('#range').value;
+    const iso = d => d.toISOString().slice(0, 10);
+    const until = iso(new Date());
+    const since = iso(new Date(Date.now() - days * 86400 * 1000));
+    const app = $('#app').value;
+    const r = await fetch(`/api/argocd/metrics?since=${since}&until=${until}${app ? '&apps=' + encodeURIComponent(app) : ''}`);
+    if (!r.ok) throw r;
+    state.data = await r.json();
+    const appName = app ? (state.apps.find(a => a.id === app) || {}).name : 'all applications';
+    const src = state.data.source === 'argocd-api' ? 'ArgoCD API (history is limited to ~10 syncs per app)' : 'DevLake (cicd_deployments)';
+    $('#scopebar').textContent = `Deployments from ${src} · ${since} → ${until} · ${appName || 'all applications'}`;
+    render();
+  } catch (e) {
+    const msg = e.json ? ((await e.json()).detail || 'Request failed') : (e.message || 'Failed to load');
+    $('#error').textContent = 'Error: ' + msg;
+    $('#error').classList.remove('hidden');
+  } finally {
+    $('#loading').classList.add('hidden');
+  }
+}
+
+$('#range').addEventListener('change', load);
+$('#app').addEventListener('change', load);
+$('#theme').addEventListener('click', () => {
+  document.documentElement.classList.toggle('dark');
+  $('#theme').textContent = isDark() ? '☀️' : '🌙';
+  render();  // repaint charts with the theme's validated palette
+});
+$('#csv').addEventListener('click', () => {
+  if (!state.data) return;
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const rows = [['created_date','deployment_name','environment','result','status','description','finished_date']];
+  state.data.recent.forEach(r => rows.push([r.created_date, r.deployment_name, r.environment,
+    r.result, r.status, r.description, r.finished_date].map(q)));
+  const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'argocd-deployments.csv'; a.click();
+});
+
+loadApps().then(load);
+</script>
+</body>
+</html>

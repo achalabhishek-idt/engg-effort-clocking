@@ -693,6 +693,122 @@ tbody tr.employee-row:active {
     padding: 24px;
     color: var(--text-secondary);
 }
+.anomaly-subtitle {
+    font-weight: 400;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+.anomaly-table-wrap {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+.anomaly-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.anomaly-table th {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    text-align: left;
+    font-weight: 600;
+    color: var(--text);
+    padding: 10px 14px;
+    border-bottom: 2px solid var(--border);
+    box-shadow: 0 1px 0 var(--border);
+}
+.anomaly-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    white-space: nowrap;
+}
+.anomaly-table td.anomaly-issues {
+    white-space: normal;
+    width: 45%;
+    line-height: 1.6;
+}
+.anomaly-issue-link {
+    color: var(--blue, #0052cc);
+    text-decoration: none;
+    font-weight: 500;
+}
+.anomaly-issue-link:hover { text-decoration: underline; }
+.anomaly-issue-hours { color: var(--text-secondary); font-size: 12px; }
+.anomaly-issue-more {
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: help;
+    border-bottom: 1px dotted var(--text-secondary);
+}
+.anomaly-table tbody tr:last-child td { border-bottom: none; }
+.anomaly-table .num { text-align: right; }
+.anomaly-hours-high { font-weight: 700; color: var(--red); }
+.anomaly-chips {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+.anomaly-chip {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.anomaly-chip:hover { border-color: var(--blue, #0052cc); color: var(--text); }
+.anomaly-chip.active {
+    background: var(--blue, #0052cc);
+    border-color: var(--blue, #0052cc);
+    color: #fff;
+}
+.anomaly-person {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: var(--blue, #0052cc);
+    cursor: pointer;
+}
+.anomaly-person:hover { text-decoration: underline; }
+.anomaly-weekday {
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: rgba(148, 163, 184, .15);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 4px;
+}
+.anomaly-weekday.is-weekend {
+    color: #b65c00;
+    background: var(--amber-light);
+}
+.anomaly-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    border-radius: 4px;
+    padding: 3px 8px;
+    white-space: nowrap;
+}
+.anomaly-badge-future { color: #b65c00; background: var(--amber-light); border: 1px solid #ffd8a8; }
+.anomaly-badge-high { color: var(--red); background: var(--red-light); border: 1px solid #ffbdad; }
+.anomaly-badge-weekend { color: var(--text-secondary); background: rgba(148, 163, 184, .15); border: 1px solid var(--border); }
+.anomaly-count {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: right;
+}
 
 /* Project Health Section */
 .project-health-section { padding: 0 24px 20px; }

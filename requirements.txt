@@ -5,3 +5,5 @@ openpyxl==3.1.5
 requests==2.32.3
 python-dotenv==1.0.1
 anthropic==0.39.0
+pymysql==1.1.1
+cryptography==44.0.1
