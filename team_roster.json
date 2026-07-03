@@ -1,117 +1,502 @@
 {
-    "team": "Engineering (EPD)",
-    "expected_hours": 168,
-    "members": [
-        {"name": "A Senthil Kumar", "email": "senthil.kumar@subex.com"},
-        {"name": "Aayush Agrawal", "email": "aayush.agrawal@subex.com"},
-        {"name": "Abhilash Pradhan", "email": "abhilash.pradhan@subex.com"},
-        {"name": "Abhishek Ghosh", "email": "abhishek.ghosh@subex.com"},
-        {"name": "Abhishek Tripathi", "email": "abhishek.tripathi@subex.com"},
-        {"name": "Achal Abhishek", "email": "achal.abhishek@subex.com"},
-        {"name": "Aditya Kumar Verma", "email": "aditya.verma@subex.com"},
-        {"name": "Akash Sil", "email": "akash.sil@subex.com"},
-        {"name": "Aman Kumar Verma", "email": "aman.verma@subex.com"},
-        {"name": "Aman Patidar", "email": "aman.patidar@subex.com"},
-        {"name": "Aman Singh Azad", "email": "aman.azad@subex.com"},
-        {"name": "Aniket Kumar Mishra", "email": "aniket.mishra@subex.com"},
-        {"name": "Anshul Gupta", "email": "anshul.gupta@subex.com"},
-        {"name": "Anupam Sharma", "email": "anupam.sharma@subex.com"},
-        {"name": "Aravind S", "email": "aravind.s@subex.com"},
-        {"name": "Archana Thakur", "email": "archana.thakur@subex.com"},
-        {"name": "Arpit Singh", "email": "arpit.singh@subex.com"},
-        {"name": "Arunkumar K S", "email": "arunkumar.ks@subex.com", "exclude_from_metrics": true},
-        {"name": "Ashwini K", "email": "ashwini.k@subex.com"},
-        {"name": "Ayan Das", "email": "ayan.das@subex.com"},
-        {"name": "Ayush Singh", "email": "ayush.singh@subex.com"},
-        {"name": "Banka Satya Chaitanya Varma", "email": "banka.varma@subex.com"},
-        {"name": "Bharath M", "email": "bharath.m@subex.com"},
-        {"name": "Chaithra E", "email": "chaithra.e@subex.com"},
-        {"name": "D A Vishal", "email": "vishal.da@subex.com"},
-        {"name": "Darshan K S", "email": "darshan.ks@subex.com"},
-        {"name": "Deepak Kumar Mishra", "email": "deepak.mishra@subex.com"},
-        {"name": "Eeruru Mahaboobbee", "email": "mahaboobbee.eeruru@subex.com"},
-        {"name": "Girija Sankar Das", "email": "girija.das@subex.com"},
-        {"name": "Gurushantha R G", "email": "gurushantha.rg@subex.com"},
-        {"name": "Hemanshu Dhingra", "email": "hemanshu.dhingra@subex.com", "exclude_from_metrics": true},
-        {"name": "Immadisetty Manikanta", "email": "immadisetty.m@subex.com"},
-        {"name": "Inbavanan VK", "email": "inbavana.vk@subex.com"},
-        {"name": "Ishan Pattnayak", "email": "ishan.pattnayak@subex.com"},
-        {"name": "Jerinjose Albertjose", "email": "jerinjose.albertjose@subex.com"},
-        {"name": "Julie S Rosane", "email": "julie.rosane@subex.com"},
-        {"name": "K N Pragathy Reddy", "email": "knpragathy.reddy@subex.com"},
-        {"name": "Kalagiri Dorababu", "email": "kalagiri.dorababu@subex.com"},
-        {"name": "Karthikeyan V", "email": "karthikeyan.v@subex.com"},
-        {"name": "Kartik Mishra", "email": "kartik.mishra@subex.com"},
-        {"name": "Katta Gurunadham", "email": "katta.gurunadham@subex.com"},
-        {"name": "Keerthana K Bhat", "email": "keerthana.bhat@subex.com"},
-        {"name": "Keerthanarani Muralikrishnan", "email": "keerthanarani.m@subex.com"},
-        {"name": "Keerthi Kumar Narayan", "email": "keerthi.narayan@subex.com", "exclude_from_metrics": true},
-        {"name": "Kirubadevi D", "email": "kirubadevi.d@subex.com"},
-        {"name": "Kunal Kapoor", "email": "kunal.kapoor@subex.com"},
-        {"name": "Leena J", "email": "j.leena@subex.com"},
-        {"name": "Lucky Soni", "email": "lucky.soni@subex.com"},
-        {"name": "Lukka Sreenivas", "email": "lukka.sreenivas@subex.com"},
-        {"name": "Manjesh M", "email": "manjesh.m@subex.com"},
-        {"name": "Mankala Venkata Saikumar", "email": "venkata.saikumar@subex.com"},
-        {"name": "Md Iqbal Quraishi", "email": "iqbal.quraishi@subex.com"},
-        {"name": "Md. Aquib Aman", "email": "aquib.aman@subex.com"},
-        {"name": "Miryala Srinivas Anusha", "email": "anusha.miryala@subex.com"},
-        {"name": "Mohammed Taheer", "email": "mohammed.taheer@subex.com"},
-        {"name": "Moulya G", "email": "moulya.g@subex.com"},
-        {"name": "Nagamallesh N", "email": "Nagamallesh.n@subex.com"},
-        {"name": "Navuluri Mallikarjuna", "email": "navuluri.m@subex.com"},
-        {"name": "Om Laxman Dhumal", "email": "omlaxman.dhumal@subex.com"},
-        {"name": "Pallavi J Kaushik", "email": "pallavi.kaushik@subex.com"},
-        {"name": "Pavan Kundgol", "email": "pavan.kundgol@subex.com", "exclude_from_metrics": true},
-        {"name": "Pradeepa C", "email": "pradeep.c@subex.com"},
-        {"name": "Prahlada G V", "email": "prahlada.gv@subex.com"},
-        {"name": "Prajwal Kulkarni", "email": "prajwal.kulkarni@subex.com"},
-        {"name": "Prajwal S", "email": "prajwal.s@subex.com"},
-        {"name": "Pramod Jinnappa Topannavar", "email": "pramod.topannavar@subex.com"},
-        {"name": "Prashant Kumar", "email": "prashant.kumar@subex.com"},
-        {"name": "Pratham Kumar", "email": "pratham.kumar@subex.com"},
-        {"name": "Preethi Adhimoolam", "email": "preethi.adhimoolam@subex.com"},
-        {"name": "Pricilla Reddy N", "email": "pricilla.n@subex.com"},
-        {"name": "Prity Rani", "email": "prity.rani@subex.com"},
-        {"name": "Purushotham Reddy A", "email": "purushotham.reddy@subex.com", "exclude_from_metrics": true},
-        {"name": "Rahul Muraleedharan", "email": "rahul.muraleedharan@subex.com"},
-        {"name": "Raja Sekhar Murthy Elluru", "email": "rajashekar.murthy@subex.com"},
-        {"name": "Raman Naga R Rajan", "email": "rajan.rn@subex.com", "exclude_from_metrics": true},
-        {"name": "Rashmi Giridhar Musale", "email": "rashmi.musale@subex.com"},
-        {"name": "Ravi Kumar", "email": "ravi.kumar@subex.com"},
-        {"name": "Sachin B Biradarpatil", "email": "sachin.biradarpatil@subex.com"},
-        {"name": "Sahil Singh", "email": "sahil.singh@subex.com", "exclude_from_metrics": true},
-        {"name": "Sandiptha Sankar Deb", "email": "sandiptha.deb@subex.com"},
-        {"name": "Sangeeta S Kullolli", "email": "sangeeta.kullolli@subex.com"},
-        {"name": "Shaik Mahammad Ashraf", "email": "mohammad.ashraf@subex.com"},
-        {"name": "Shilpa B M", "email": "shilpa.bm@subex.com"},
-        {"name": "Shilpa M", "email": "shilpa.m@subex.com"},
-        {"name": "Shivam Pandey", "email": "shivam.pandey@subex.com"},
-        {"name": "Shubham Pandey", "email": "shubham.pandey@subex.com"},
-        {"name": "Sumanth H S", "email": "sumanth.s@subex.com"},
-        {"name": "Sumanth K", "email": "sumanth.k@subex.com"},
-        {"name": "Sumantha M K", "email": "sumantha.mk@subex.com"},
-        {"name": "Sumitra R", "email": "sumitra.r@subex.com"},
-        {"name": "Suraj P", "email": "suraj.p@subex.com"},
-        {"name": "Surya A", "email": "surya.a@subex.com"},
-        {"name": "Swaraj Mishra", "email": "swaraj.mishra@subex.com"},
-        {"name": "Swathi Mahadev", "email": "swathi.mahadev@subex.com"},
-        {"name": "Swathi R", "email": "r.swathi@subex.com"},
-        {"name": "Takkellapati Naveen", "email": "naveen.takkellapati@subex.com"},
-        {"name": "Tammana Sampath Kumar", "email": "tammana.kumar@subex.com"},
-        {"name": "Tejas S R Anaber", "email": "tejas.anaber@subex.com"},
-        {"name": "Tharun M", "email": "tharun.m@subex.com"},
-        {"name": "Thippannagari Nandini", "email": "tippannagari.nandini@subex.com"},
-        {"name": "Thippineni Sharath", "email": "thippineni.sharath@subex.com"},
-        {"name": "Thulasi P K", "email": "thulasi.pk@subex.com"},
-        {"name": "Upendra K B", "email": "upendra.kb@subex.com", "exclude_from_metrics": true},
-        {"name": "Vadiraj C G", "email": "vadiraj.cg@subex.com"},
-        {"name": "Vetrivel M", "email": "vetrivel.m@subex.com"},
-        {"name": "Vijai M", "email": "vijai.m@subex.com"},
-        {"name": "Vikas M S", "email": "vikas.ms@subex.com"},
-        {"name": "Vishwas B S", "email": "vishwas.s@subex.com"},
-        {"name": "Vivek Ravichandran", "email": "vivek.ravichandran@subex.com"},
-        {"name": "Yashwanth A", "email": "yashwanth.alluri@subex.com"},
-        {"name": "Yennapusa Chenna Reddy", "email": "chenna.reddy@subex.com"}
-    ]
+  "expected_hours": 168,
+  "members": [
+    {
+      "name": "A Senthil Kumar",
+      "email": "senthil.kumar@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Aayush Agrawal",
+      "email": "aayush.agrawal@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Abhilash Pradhan",
+      "email": "abhilash.pradhan@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Abhishek Ghosh",
+      "email": "abhishek.ghosh@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Abhishek Tripathi",
+      "email": "abhishek.tripathi@subex.com",
+      "product": "Common"
+    },
+    {
+      "name": "Achal Abhishek",
+      "email": "achal.abhishek@subex.com",
+      "product": "Common"
+    },
+    {
+      "name": "Aditya Kumar Verma",
+      "email": "aditya.verma@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Akash Sil",
+      "email": "akash.sil@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Aman Kumar Verma",
+      "email": "aman.verma@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Aman Patidar",
+      "email": "aman.patidar@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Aman Singh Azad",
+      "email": "aman.azad@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Anshul Gupta",
+      "email": "anshul.gupta@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Aravind S",
+      "email": "aravind.s@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Archana Thakur",
+      "email": "archana.thakur@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Arpit Singh",
+      "email": "arpit.singh@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Arunkumar K S",
+      "email": "arunkumar.ks@subex.com",
+      "product": "PEM",
+      "exclude_from_metrics": true
+    },
+    {
+      "name": "Ashwini K",
+      "email": "ashwini.k@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Ayan Das",
+      "email": "ayan.das@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Ayush Singh",
+      "email": "ayush.singh@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Bharath M",
+      "email": "bharath.m@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Chaithra E",
+      "email": "chaithra.e@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "D A Vishal",
+      "email": "vishal.da@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Darshan K S",
+      "email": "darshan.ks@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Deepak Kumar Mishra",
+      "email": "deepak.mishra@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Eeruru Mahaboobbee",
+      "email": "mahaboobbee.eeruru@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Geeta Vijay Vijay Khedekar",
+      "email": "geeta.khedekar@subex.com",
+      "product": "HYPERSENSE",
+      "exclude_from_metrics": true
+    },
+    {
+      "name": "Girija Sankar Das",
+      "email": "girija.das@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Gurushantha R G",
+      "email": "gurushantha.rg@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Hemanshu Dhingra",
+      "email": "hemanshu.dhingra@subex.com",
+      "product": "ROC",
+      "exclude_from_metrics": true
+    },
+    {
+      "name": "Immadisetty Manikanta",
+      "email": "immadisetty.m@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Ishan Pattnayak",
+      "email": "ishan.pattnayak@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Jerinjose Albertjose",
+      "email": "jerinjose.albertjose@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Julie S Rosane",
+      "email": "julie.rosane@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "K N Pragathy Reddy",
+      "email": "knpragathy.reddy@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Karthikeyan V",
+      "email": "karthikeyan.v@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Kartik Mishra",
+      "email": "kartik.mishra@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Keerthana K Bhat",
+      "email": "keerthana.bhat@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Keerthanarani Muralikrishnan",
+      "email": "keerthanarani.m@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Kirubadevi D",
+      "email": "kirubadevi.d@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Kunal Kapoor",
+      "email": "kunal.kapoor@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Leena J",
+      "email": "j.leena@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Lucky Soni",
+      "email": "lucky.soni@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Lukka Sreenivas",
+      "email": "lukka.sreenivas@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Manjesh M",
+      "email": "manjesh.m@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Mankala Venkata Saikumar",
+      "email": "venkata.saikumar@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Miryala Srinivas Anusha",
+      "email": "anusha.miryala@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Mohammed Taheer",
+      "email": "mohammed.taheer@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Moulya G",
+      "email": "moulya.g@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Nagamallesh N",
+      "email": "Nagamallesh.n@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Navuluri Mallikarjuna",
+      "email": "navuluri.m@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Nitesh Kumar Shah",
+      "email": "nitesh.shah@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Om Laxman Dhumal",
+      "email": "omlaxman.dhumal@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Pallavi J Kaushik",
+      "email": "pallavi.kaushik@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Pavan Kundgol",
+      "email": "pavan.kundgol@subex.com",
+      "product": "HYPERSENSE",
+      "exclude_from_metrics": true
+    },
+    {
+      "name": "Pradeepa C",
+      "email": "pradeep.c@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Prahlada G V",
+      "email": "prahlada.gv@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Prajwal Kulkarni",
+      "email": "prajwal.kulkarni@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Prajwal S",
+      "email": "prajwal.s@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Pramod Jinnappa Topannavar",
+      "email": "pramod.topannavar@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Prashant Kumar",
+      "email": "prashant.kumar@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Pratham Kumar",
+      "email": "pratham.kumar@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Preethi Adhimoolam",
+      "email": "preethi.adhimoolam@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Prity Rani",
+      "email": "prity.rani@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Purushotham Reddy A",
+      "email": "purushotham.reddy@subex.com",
+      "product": "HYPERSENSE",
+      "exclude_from_metrics": true
+    },
+    {
+      "name": "Rahul Muraleedharan",
+      "email": "rahul.muraleedharan@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Raja Sekhar Murthy Elluru",
+      "email": "rajashekar.murthy@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Raman Naga R Rajan",
+      "email": "rajan.rn@subex.com",
+      "product": "Common",
+      "exclude_from_metrics": true
+    },
+    {
+      "name": "Rashmi Giridhar Musale",
+      "email": "rashmi.musale@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Ravi Kumar",
+      "email": "ravi.kumar@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Sachin B Biradarpatil",
+      "email": "sachin.biradarpatil@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Sandiptha Sankar Deb",
+      "email": "sandiptha.deb@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Sangeeta S Kullolli",
+      "email": "sangeeta.kullolli@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Shalini R",
+      "email": "shalini.r@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Shilpa B M",
+      "email": "shilpa.bm@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Shilpa M",
+      "email": "shilpa.m@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Shivam Pandey",
+      "email": "shivam.pandey@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Shubham Pandey",
+      "email": "shubham.pandey@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Sindhuri G",
+      "email": "sindhuri.g@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Sumanth K",
+      "email": "sumanth.k@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Sumitra R",
+      "email": "sumitra.r@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Surya A",
+      "email": "surya.a@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Surya S",
+      "email": "surya.s@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Swaraj Mishra",
+      "email": "swaraj.mishra@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Swathi Mahadev",
+      "email": "swathi.mahadev@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Swathi R",
+      "email": "r.swathi@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Tammana Sampath Kumar",
+      "email": "tammana.kumar@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Tejas S R Anaber",
+      "email": "tejas.anaber@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Thippannagari Nandini",
+      "email": "tippannagari.nandini@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Thulasi P K",
+      "email": "thulasi.pk@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Upendra K B",
+      "email": "upendra.kb@subex.com",
+      "product": "Common",
+      "exclude_from_metrics": true
+    },
+    {
+      "name": "Vadiraj C G",
+      "email": "vadiraj.cg@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Vetrivel M",
+      "email": "vetrivel.m@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Vijai M",
+      "email": "vijai.m@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Vikas M S",
+      "email": "vikas.ms@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Vinayaka C",
+      "email": "vinayaka.c@subex.com",
+      "product": "ROC"
+    },
+    {
+      "name": "Vishwas B S",
+      "email": "vishwas.s@subex.com",
+      "product": "PEM"
+    },
+    {
+      "name": "Vivek Ravichandran",
+      "email": "vivek.ravichandran@subex.com",
+      "product": "HYPERSENSE"
+    },
+    {
+      "name": "Yennapusa Chenna Reddy",
+      "email": "chenna.reddy@subex.com",
+      "product": "HYPERSENSE"
+    }
+  ]
 }

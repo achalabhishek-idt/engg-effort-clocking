@@ -1345,7 +1345,7 @@ def api_data():
     result["period"] = period
     result["expected_hours"] = period_expected
     result["team_size"] = len(result["data"])
-    result["roster_size"] = 111
+    result["roster_size"] = len(load_team_roster().get("members", []))
     return jsonify(result), 200
 
 @app.route("/api/data/custom", methods=["GET"])
@@ -1396,7 +1396,7 @@ def api_data_custom():
     result["period"] = "custom_range"
     result["expected_hours"] = period_expected
     result["team_size"] = len(result["data"])
-    result["roster_size"] = 111
+    result["roster_size"] = len(load_team_roster().get("members", []))
     result["start"] = start_str
     result["end"] = end_str
     return jsonify(result), 200
